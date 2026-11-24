@@ -104,6 +104,7 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
   governed by `DOCUSHELF_ALLOWED_*` / `ALLOW_ALL_OIDC_USERS` as before. Nothing moves on disk.
 - **With** the file (`configured(settings)`):
   ```yaml
+  admins: [erika@example.org]    # may manage the users of every household in the web UI
   households:
     - id: familie-a              # ^[a-z0-9][a-z0-9-]{0,31}$, used in paths
       name: "Familie A"
@@ -127,7 +128,9 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
 - `@dataclass(frozen=True) Household(id, name, path, groups, users, owner_names, notify_url,
   auto_file, imap, smtp_recipients, watch_folders)`; property `access` (German text).
 - `load_households(settings, *, env=None) -> list[Household]` (single-household fallback
-  included), `default_household(settings)`, `households_file(settings)`, `configured(settings)`.
+  included), `parse_admins(raw)`, `default_household(settings)`, `households_file(settings)`,
+  `configured(settings)`, `clean_member(value)` (trimmed, non-empty, at most
+  `MAX_MEMBER_LENGTH` = 200 characters, no control characters; else `ConfigError`).
 - `settings_for(settings, household, *, households=None) -> Settings` – without the file the
   settings unchanged; otherwise `data_dir = household.path`, `archive_dir = <path>/archiv`
   (`DOCUSHELF_ARCHIVE_DIR` only counts with a single household), `owner_names`, `notify_url`,
@@ -140,9 +143,23 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
   `settings_for(id)`, `services(id)` (created lazily, kept), `created()`,
   `for_user(user) -> list[Household]` (local admin: all; SSO: by `groups`/`users`, or the
   classic allow rules without the file; a token user: none, the web layer knows its household),
+  `admins` (from the file, casefolded), `is_admin(user)` (household mode only: the local
+  account, `admins`, or `settings.admin_users` from `DOCUSHELF_ADMIN_USERS`, matched by user name
+  or e-mail; never a token), `change_members(id, *, add=|remove=) -> Household`,
   `by_smtp_recipient(address)`, `recover()`, `start()`, `stop()`, `close()`. `start()` also
   protects the households' watch folders from each other (`inbox.intake.protect_households`)
   and, in household mode, starts the one global SMTP receiver.
+- `change_members` (under the registry lock) reads `households.yaml`, refuses if the current file
+  does not validate, edits the household's `users` (duplicates compared case-insensitively →
+  `Conflict`; removing an unlisted name → `NotFound`), dumps the YAML (`sort_keys=False`: other
+  keys and household order stay, comments are lost), validates the result with
+  `parse_households`, refuses if the household ids differ from the running ones (adding or
+  removing households needs a restart), then writes `households.yaml.bak` (previous text) and
+  the new file with `fsops.atomic_write_text`. Finally `_apply_members` replaces the running
+  `Household` objects with copies carrying the new `groups`/`users` (everything else stays as
+  started), rebuilds the id/recipient maps, updates `services.household` of created
+  containers and takes the new `admins`. `for_user`, the SSO login gate and the per-request
+  session check use these lists, so access changes with the next request.
 - Process-wide OCR limit: `pdf.ocr.OCR_SLOTS` (`BoundedSemaphore`), resized by
   `configure_ocr_slots(size)` (the registry calls it with `settings.ocr_parallel`). Every
   ocrmypdf run holds one slot, so households do not overload the machine together.
@@ -693,6 +710,7 @@ Owned by two modules sets; the boundary:
   `session["household"]` while the user still belongs to it, otherwise the user's first household
   (remembered in the session); `user_households(request, user)`, `switchable_households(request)`
   (≥ 2 only), `switch_household(request, household_id) -> Household | None`,
+  `is_household_admin(request, user)` (household mode, browser sessions only, `Registry.is_admin`),
   `household_key(request) -> str | None`. `class NoHousehold(HTTPException)` (403, German page
   "Kein Haushalt freigegeben", template `no_household.html`). Every route gets its data only
   through `get_services(request)`; an id from another household is a 404. State kept per
@@ -746,7 +764,12 @@ Owned by two modules sets; the boundary:
   `POST /eingang/automatisch/{id}/passt`), `POST /eingang/sammelablage` (checkbox values
   `id[:fingerprint[:dup]]`), `POST /einstellungen/sprachmodell/testen` (runs `llm_probe`),
   `POST /haushalt` (form field `id`; `switch_household`, then redirect to `/eingang`; the header
-  shows a switcher only for users with ≥ 2 households), `GET|POST /teilen`.
+  shows a switcher only for users with ≥ 2 households),
+  `POST /einstellungen/haushalte/{id}/mitglieder` and `…/mitglieder/entfernen` (form field `user`;
+  browser login + CSRF; 404 without households, 403 unless `is_household_admin`; calls
+  `Registry.change_members`, audits `household_members` with `added`/`removed` in the edited
+  household's log; the settings section `#haushalte` is only rendered for admins),
+  `GET|POST /teilen`.
   The archive page has two views, tiles and list, chosen with `?ansicht=kacheln|liste`
   and remembered in the cookie `ds_ansicht` (read server-side, works without JavaScript).
 - `web/routes_share.py` – phone sharing. `GET /manifest.webmanifest` (installable app with a

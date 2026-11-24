@@ -25,6 +25,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 from ..errors import ConfigError, Conflict, DocuShelfError, NotFound, PathError
+from ..households import MAX_MEMBER_LENGTH
 from ..models import Analysis, MetadataUpdate
 from ..util.ids import is_item_id
 from ..util.names import check_relative, format_filename, sanitize_folder
@@ -1703,11 +1704,24 @@ def settings_page(request: Request, user: User = Depends(require_user)) -> HTMLR
             "probe": probe,
             "probe_answer": views.probe_answer((probe or {}).get("answer")),
             "probe_running": probe_running,
+            "member_admin": _member_overview(request, user),
+            "max_member_length": MAX_MEMBER_LENGTH,
         },
     )
     if new_token:
         response.headers["Cache-Control"] = "no-store"
     return response
+
+
+def _member_overview(request: Request, user: Any) -> list[dict[str, Any]] | None:
+    """Every household with its members for the admin section, or None (not an admin)."""
+    if not security.is_household_admin(request, user):
+        return None
+    registry = security.get_registry(request)
+    return [
+        {"id": h.id, "name": h.name, "users": list(h.users), "groups": list(h.groups)}
+        for h in registry.households
+    ]
 
 
 _probe_lock = threading.Lock()
@@ -1776,6 +1790,54 @@ def _switch_household(request: Request, form: Any, user: Any) -> Response:
         return _not_found(request, user, "Diesen Haushalt gibt es nicht oder er ist für dich nicht freigegeben.")
     flash(request, f"Du arbeitest jetzt im Haushalt „{household.name}“.")
     return redirect("/eingang")
+
+
+@router.post("/einstellungen/haushalte/{household_id}/mitglieder")
+async def household_member_add(
+    request: Request, household_id: str, user: User = Depends(require_session_user), _csrf: Any = Depends(verify_csrf)
+) -> Response:
+    return await _with_form(request, _change_members, user, household_id, "add")
+
+
+@router.post("/einstellungen/haushalte/{household_id}/mitglieder/entfernen")
+async def household_member_remove(
+    request: Request, household_id: str, user: User = Depends(require_session_user), _csrf: Any = Depends(verify_csrf)
+) -> Response:
+    return await _with_form(request, _change_members, user, household_id, "remove")
+
+
+def _change_members(request: Request, form: Any, user: Any, household_id: str, change: str) -> Response:
+    """Add a user to or remove a user from a household (admins only, written to households.yaml)."""
+    back = "/einstellungen#haushalte"
+    if not security.multi_household(request):
+        return _not_found(request, user, "Haushalte gibt es in dieser Installation nicht.")
+    if not security.is_household_admin(request, user):
+        return _error_page(
+            request, user, 403, "Keine Berechtigung", "Haushaltsmitglieder können nur Administratoren ändern."
+        )
+    registry = security.get_registry(request)
+    name = form_value(form, "user")
+    try:
+        if change == "add":
+            household = registry.change_members(household_id, add=name)
+        else:
+            household = registry.change_members(household_id, remove=name)
+    except DocuShelfError as exc:
+        flash(request, views.error_text(exc, "Die Mitglieder konnten nicht geändert werden."), "error")
+        return redirect(back)
+    name = name.strip()
+    try:
+        services = registry.services(household.id)
+    except Exception:
+        log.exception("cannot open household %s for the audit log", household.id)
+        services = None
+    if change == "add":
+        _audit(services, user, "household_members", added=name, household=household.id)
+        flash(request, f"„{name}“ gehört jetzt zum Haushalt „{household.name}“.")
+    else:
+        _audit(services, user, "household_members", removed=name, household=household.id)
+        flash(request, f"„{name}“ wurde aus dem Haushalt „{household.name}“ entfernt.")
+    return redirect(back)
 
 
 @router.post("/einstellungen/abgleich")

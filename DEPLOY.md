@@ -828,6 +828,7 @@ Die Datei liegt in `<daten>/config/households.yaml`, neben `settings.yaml` und `
 Eine kommentierte Vorlage steht in `deploy/households.example.yaml`:
 
 ```yaml
+admins: ["erika@example.org"]    # dürfen Mitglieder in der Weboberfläche pflegen (s. u.)
 households:
   - id: familie-a                # a-z, 0-9, „-“; stabil – steckt in Pfaden und Tokens
     name: "Familie Mustermann"
@@ -857,6 +858,7 @@ Je Haushalt lassen sich außerdem `owner_names`, `notify_url`, `auto_file` (Übe
 - Passwörter für IMAP am besten als `password_file` (Docker-Secret) oder `password_env`; sie
   werden nie protokolliert oder angezeigt.
 - Änderungen an der Datei wirken nach einem Neustart: `docker compose up -d --force-recreate docushelf`.
+  Ausnahme: die `users` der Haushalte, die Admins in der Weboberfläche pflegen (nächster Abschnitt).
 - Mit `households.yaml` gelten `DOCUSHELF_ALLOWED_USERS`, `_ALLOWED_GROUPS` und
   `_ALLOW_ALL_OIDC_USERS` **nicht mehr**: Zugriff geben allein die `groups` und `users` der
   Haushalte (bisherige Gruppe also beim bisherigen Haushalt eintragen). Wer zu keinem Haushalt
@@ -875,6 +877,33 @@ Anwendung, Abschnitt 4), den Haushalten ordnet DocuShelf die Gruppen aus dem Cla
 Wer in mehreren Gruppen ist, sieht in der Kopfzeile einen Umschalter und landet beim Anmelden im
 ersten seiner Haushalte; wer nur in einer ist, merkt nichts davon. Gruppenänderungen wirken wie
 immer erst bei der nächsten Anmeldung.
+
+### Mitglieder in der Weboberfläche pflegen
+
+Statt jede Person in eine Gruppe beim Anmeldedienst zu setzen, kann ein Admin die einzelnen
+Konten (`users`) direkt in DocuShelf pflegen: **Einstellungen → Haushalte** zeigt für jeden
+Haushalt Name, Kennung, die eingetragenen Benutzer (hinzufügen und entfernen) und die Gruppen
+(nur zur Ansicht – die kommen aus dem Anmeldedienst bzw. aus `households.yaml`).
+
+- **Admins** sind das lokale Notfallkonto, die Einträge unter `admins:` in `households.yaml` und
+  die Konten in `DOCUSHELF_ADMIN_USERS` (kommagetrennt). Gemeint ist jeweils der Benutzername
+  aus dem Anmeldedienst oder die bestätigte E-Mail-Adresse, Groß-/Kleinschreibung egal. Andere
+  sehen den Abschnitt nicht und bekommen beim Ändern „Keine Berechtigung“ (403). Ein Admin muss
+  selbst zu einem Haushalt gehören, um die Einstellungen öffnen zu können.
+- Eingetragen wird ein Benutzername oder eine E-Mail-Adresse (höchstens 200 Zeichen); doppelte
+  Einträge im selben Haushalt werden abgelehnt, eine Person darf aber in mehreren Haushalten sein.
+- Die Änderung wirkt **sofort**: Wer hinzugefügt wird, kann sich gleich anmelden bzw. umschalten;
+  wer entfernt wird, verliert beim nächsten Seitenaufruf den Zugriff (außer über eine Gruppe).
+  Sie steht im Protokoll des Haushalts („Haushaltsmitglieder geändert“).
+- DocuShelf schreibt dafür `households.yaml` neu. Die vorige Fassung liegt danach als
+  `households.yaml.bak` daneben. Alle anderen Einträge und die Reihenfolge der Haushalte bleiben
+  erhalten, **Kommentare gehen verloren**. Vor dem Speichern wird die ganze Datei wie beim Start
+  geprüft; ist sie ungültig (z. B. nach einer Handänderung mit Tippfehler), wird nichts
+  geschrieben und die Seite zeigt die Fehlermeldung.
+- Haushalte hinzufügen, entfernen oder umbenennen geht weiterhin nur in der Datei und mit Neustart.
+
+Für einen einzigen Haushalt (ohne `households.yaml`) gibt es diesen Abschnitt nicht; dort gelten
+`DOCUSHELF_ALLOWED_USERS` und `_ALLOWED_GROUPS` wie bisher.
 
 ### Datenablage
 

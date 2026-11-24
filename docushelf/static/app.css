@@ -1035,6 +1035,8 @@ details[open] > summary .disclosure-caret { transform: rotate(180deg); }
 .source-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 9px; background: var(--surface-3); color: var(--muted); }
 .token-reveal { display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--radius); background: var(--success-soft); animation: pop-in .25s var(--ease); }
 .copy-field { display: flex; gap: 8px; }
+.member-household { gap: 12px; }
+.member-household + .member-household { padding-top: 16px; border-top: 1px solid var(--border); }
 .copy-field .input { flex: 1; }
 .audit-table td { font-size: .88rem; }
 

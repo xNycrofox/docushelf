@@ -24,6 +24,12 @@ tokens and channels, and its own :class:`~docushelf.services.Services`::
         smtp_recipients: [scan-familie-a@docushelf.local]
         watch_folders: {nas: /watch/familie-a}
 
+An optional top-level ``admins: [name, ...]`` lists the accounts (user name or
+verified e-mail address, like ``users``) that may manage the ``users`` of every
+household in the web interface; ``DOCUSHELF_ADMIN_USERS`` adds more, and the
+local emergency account always may. Such a change is written back to the file
+(:meth:`Registry.change_members`) and takes effect at once.
+
 The file is validated strictly: unknown keys are errors, because a typo in
 ``groups`` must never silently change who has access. Secrets (IMAP
 passwords) are never logged or shown.
@@ -39,6 +45,7 @@ import logging
 import os
 import posixpath
 import re
+import stat
 import threading
 from dataclasses import dataclass, field, replace
 from email.utils import parseaddr
@@ -56,14 +63,20 @@ from .config import (
     parse_auto_file_sources,
     parse_threshold,
 )
-from .errors import ConfigError, NotFound
+from .errors import Conflict, ConfigError, NotFound
 from .layout import Layout
+from .util.fsops import atomic_write_text
 
 log = logging.getLogger(__name__)
 
 DEFAULT_ID = "default"
 DEFAULT_PARENT = "haushalte"
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+# Longest user name or e-mail address accepted as a household member in the web interface.
+MAX_MEMBER_LENGTH = 200
+BACKUP_SUFFIX = ".bak"
+
+_TOP_KEYS = ("households", "admins")
 
 _HOUSEHOLD_KEYS = (
     "id",
@@ -165,27 +178,50 @@ def load_households(settings: Settings, *, env: Mapping[str, str] | None = None)
     is where ``password_env`` is looked up (default: the process environment).
     Raises ConfigError (German) for anything invalid.
     """
+    return _load(settings, env)[0]
+
+
+def _load(settings: Settings, env: Mapping[str, str] | None) -> tuple[list[Household], tuple[str, ...]]:
+    """The households and the configured admins (casefolded) of ``households.yaml``."""
     path = households_file(settings)
     if not path.is_file():
-        return [default_household(settings)]
+        return [default_household(settings)], ()
+    raw = _parse_yaml(_read_text(path))
+    households = parse_households(raw, settings, env=os.environ if env is None else env)
+    return households, parse_admins(raw)
+
+
+def _read_text(path: Path) -> str:
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"{HOUSEHOLDS_FILE} ist ungültig: {exc}") from exc
+        return path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConfigError(f"{HOUSEHOLDS_FILE} kann nicht gelesen werden: {exc.strerror or exc}") from exc
-    return parse_households(raw, settings, env=os.environ if env is None else env)
+
+
+def _parse_yaml(text: str) -> Any:
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{HOUSEHOLDS_FILE} ist ungültig: {exc}") from exc
+
+
+def parse_admins(raw: Any) -> tuple[str, ...]:
+    """The ``admins`` of ``households.yaml`` (casefolded; empty without the entry)."""
+    if not isinstance(raw, dict):
+        return ()
+    return tuple(name.casefold() for name in _strings(raw.get("admins"), f"{HOUSEHOLDS_FILE}: admins"))
 
 
 def parse_households(raw: Any, settings: Settings, *, env: Mapping[str, str]) -> list[Household]:
     """Validate the content of ``households.yaml`` (already parsed YAML)."""
     if not isinstance(raw, dict):
         raise ConfigError(f"{HOUSEHOLDS_FILE} muss den Eintrag „households:“ mit einer Liste von Haushalten enthalten.")
-    unknown = [str(key) for key in raw if key != "households"]
+    unknown = [str(key) for key in raw if key not in _TOP_KEYS]
     if unknown:
         raise ConfigError(
-            f"{HOUSEHOLDS_FILE}: unbekannter Eintrag „{unknown[0]}“ – erlaubt ist nur „households:“."
+            f"{HOUSEHOLDS_FILE}: unbekannter Eintrag „{unknown[0]}“ – erlaubt sind nur „households:“ und „admins:“."
         )
+    parse_admins(raw)
     entries = raw.get("households")
     if not isinstance(entries, list) or not entries:
         raise ConfigError(f"{HOUSEHOLDS_FILE}: „households:“ muss eine Liste mit mindestens einem Haushalt sein.")
@@ -597,6 +633,27 @@ def _user_matches(household: Household, user: Any) -> bool:
     return any(str(group).strip().casefold() in groups for group in getattr(user, "groups", None) or ())
 
 
+def clean_member(value: Any) -> str:
+    """A user name or e-mail address entered as a household member (trimmed), or ConfigError."""
+    text = value.strip() if isinstance(value, str) else ""
+    if not text:
+        raise ConfigError("Bitte einen Benutzernamen oder eine E-Mail-Adresse angeben.")
+    if len(text) > MAX_MEMBER_LENGTH:
+        raise ConfigError(f"Der Benutzername ist zu lang (höchstens {MAX_MEMBER_LENGTH} Zeichen).")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in text):
+        raise ConfigError("Der Benutzername darf keine Zeilenumbrüche oder Steuerzeichen enthalten.")
+    return text
+
+
+def _member_list(value: Any) -> list[str]:
+    """The ``users`` entry of a household as a list of texts (already validated by the loader)."""
+    if value is None:
+        return []
+    if isinstance(value, (str, int)) and not isinstance(value, bool):
+        value = [value]
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 def _single_household_allowed(settings: Settings, user: Any) -> bool:
     """The classic rules: ``DOCUSHELF_ALLOWED_USERS/_GROUPS`` or ``ALLOW_ALL_OIDC_USERS``."""
     users = {str(u).strip().casefold() for u in settings.allowed_users or () if str(u).strip()}
@@ -633,12 +690,13 @@ class Registry:
     ):
         self.settings = settings
         self.configured = configured(settings)
-        self.households: list[Household] = load_households(settings, env=env)
+        self._env = env
+        households, admins = _load(settings, env)
+        self.households: list[Household] = households
+        # Admins named in households.yaml (casefolded); see is_admin().
+        self.admins: tuple[str, ...] = admins
         self.default: Household | None = None if self.configured else self.households[0]
-        self._by_id = {household.id: household for household in self.households}
-        self._recipients = {
-            address: household for household in self.households for address in household.smtp_recipients
-        }
+        self._index(self.households)
         self._factory = services_factory or _default_services_factory
         self._services: dict[str, Any] = {}
         self._lock = threading.RLock()
@@ -658,6 +716,10 @@ class Registry:
 
     def __iter__(self) -> Iterator[Household]:
         return iter(self.households)
+
+    def _index(self, households: list[Household]) -> None:
+        self._by_id = {household.id: household for household in households}
+        self._recipients = {address: household for household in households for address in household.smtp_recipients}
 
     def get(self, household_id: str) -> Household:
         try:
@@ -710,6 +772,25 @@ class Registry:
             return []
         return [household for household in self.households if _user_matches(household, user)]
 
+    def is_admin(self, user: Any) -> bool:
+        """Whether ``user`` may manage household members (household mode only).
+
+        Admins are the local emergency account, the ``admins`` of
+        ``households.yaml`` and ``DOCUSHELF_ADMIN_USERS`` (user name or e-mail
+        address, case-insensitive). API tokens never are.
+        """
+        if user is None or not self.multi:
+            return False
+        method = getattr(user, "method", None)
+        if method == "local":
+            return True
+        if method != "oidc":
+            return False
+        names = set(self.admins) | {str(n).strip().casefold() for n in self.settings.admin_users or () if str(n).strip()}
+        username = str(getattr(user, "username", "") or "").strip().casefold()
+        email = str(getattr(user, "email", "") or "").strip().casefold()
+        return bool((username and username in names) or (email and email in names))
+
     def by_smtp_recipient(self, address: str) -> Household | None:
         """The household mail to ``address`` belongs to (None: unknown address).
 
@@ -721,6 +802,102 @@ class Registry:
         if not normalized:
             return None
         return self._recipients.get(normalized)
+
+    # -- membership ---------------------------------------------------------------------
+    def change_members(self, household_id: str, *, add: str | None = None, remove: str | None = None) -> Household:
+        """Add a user to or remove a user from the ``users`` of a household.
+
+        The change is made in ``households.yaml`` itself: the current file is
+        read, the entry changed, and the whole result validated like at start-up
+        before the file is replaced (atomically, the previous content kept as
+        ``households.yaml.bak``). Other entries and the order of the households
+        stay as they are; comments are lost. Afterwards the groups, users and
+        admins of the running households are taken from the new file, so access
+        changes with the next request; service containers keep running.
+
+        Raises ConfigError (German) for invalid input or an invalid file,
+        Conflict for a user already listed and NotFound for an unknown
+        household or a user not listed. Nothing is written in these cases.
+        """
+        if not self.multi:
+            raise ConfigError("Haushaltsmitglieder lassen sich nur mit households.yaml verwalten.")
+        if (add is None) == (remove is None):
+            raise ValueError("exactly one of add and remove is required")
+        name = clean_member(add if add is not None else remove)
+        env = os.environ if self._env is None else self._env
+        path = households_file(self.settings)
+        with self._lock:
+            household = self.get(household_id)
+            text = _read_text(path)
+            raw = _parse_yaml(text)
+            try:
+                parse_households(raw, self.settings, env=env)
+            except ConfigError as exc:
+                raise ConfigError(f"Die Datei ist derzeit ungültig, es wurde nichts geändert. {exc}") from exc
+            entry = next(
+                (e for e in raw["households"] if isinstance(e, dict) and e.get("id") == household.id), None
+            )
+            if entry is None:
+                raise NotFound(
+                    f"Den Haushalt „{household.id}“ gibt es in {HOUSEHOLDS_FILE} nicht mehr. "
+                    "Haushalte hinzufügen oder entfernen wirkt erst nach einem Neustart."
+                )
+            users = _member_list(entry.get("users"))
+            key = name.casefold()
+            listed = [u for u in users if u.strip().casefold() == key]
+            if add is not None:
+                if listed:
+                    raise Conflict(f"„{name}“ ist schon Mitglied im Haushalt „{household.name}“.")
+                users.append(name)
+            else:
+                if not listed:
+                    raise NotFound(f"„{name}“ steht nicht (mehr) bei den Benutzern des Haushalts „{household.name}“.")
+                users = [u for u in users if u.strip().casefold() != key]
+            entry["users"] = users
+
+            new_text = yaml.safe_dump(raw, allow_unicode=True, sort_keys=False, default_flow_style=False, width=4096)
+            new_raw = _parse_yaml(new_text)
+            households = parse_households(new_raw, self.settings, env=env)
+            admins = parse_admins(new_raw)
+            if [h.id for h in households] != [h.id for h in self.households]:
+                raise ConfigError(
+                    f"In {HOUSEHOLDS_FILE} wurden inzwischen Haushalte hinzugefügt, entfernt oder umsortiert. "
+                    "Bitte DocuShelf zuerst neu starten; es wurde nichts geändert."
+                )
+            backup = path.with_name(path.name + BACKUP_SUFFIX)
+            try:
+                # Keep the file's permissions: it may hold an IMAP password.
+                file_mode = stat.S_IMODE(path.stat().st_mode)
+                atomic_write_text(backup, text, mode=file_mode)
+                atomic_write_text(path, new_text, mode=file_mode)
+            except OSError as exc:
+                raise ConfigError(
+                    f"{HOUSEHOLDS_FILE} konnte nicht gespeichert werden: {exc.strerror or exc}"
+                ) from exc
+            self._apply_members(households, admins)
+            changed = self.get(household.id)
+        log.info(
+            "household %s: user %s %s", household.id, "added" if add is not None else "removed", name
+        )
+        return changed
+
+    def _apply_members(self, households: Sequence[Household], admins: tuple[str, ...]) -> None:
+        """Take groups and users from freshly loaded households; everything else stays as started."""
+        fresh = {household.id: household for household in households}
+        updated = [
+            replace(old, groups=fresh[old.id].groups, users=fresh[old.id].users) if old.id in fresh else old
+            for old in self.households
+        ]
+        self._index(updated)
+        self.households = updated
+        self.admins = admins
+        for household in updated:
+            services = self._services.get(household.id)
+            if services is not None and getattr(services, "household", None) is not None:
+                try:
+                    services.household = household
+                except AttributeError:
+                    pass
 
     # -- lifecycle --------------------------------------------------------------------
     def recover(self) -> None:

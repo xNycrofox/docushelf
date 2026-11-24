@@ -29,6 +29,8 @@ belongs to the household whose ``tokens.yaml`` holds it; a browser session
 uses ``session["household"]`` while the user still belongs to it, otherwise
 the first household the user belongs to. Membership comes from the groups and
 users of each household; the local emergency account may use every household.
+Admins (:func:`is_household_admin`) may change the users of every household
+in the web interface; such a change applies from the next request on.
 A logged-in user without any household gets 403 (:class:`NoHousehold`). With
 a single household nothing of this applies and everything works as before.
 """
@@ -400,6 +402,20 @@ def switch_household(request: Request, household_id: str) -> Any:
     request.session[SESSION_HOUSEHOLD] = household.id
     request.scope[_HOUSEHOLD_SCOPE_KEY] = (household,)
     return household
+
+
+def is_household_admin(request: Request, user: User | None) -> bool:
+    """Whether ``user`` may manage household members (several households, browser login only)."""
+    if user is None or user.method == "token" or not multi_household(request):
+        return False
+    is_admin = getattr(get_registry(request), "is_admin", None)
+    if is_admin is None:
+        return False
+    try:
+        return bool(is_admin(user))
+    except Exception:
+        log.exception("cannot determine whether %s is an admin", user.username)
+        return False
 
 
 def _relevant_groups(request: Request, settings: Any) -> set[str]:

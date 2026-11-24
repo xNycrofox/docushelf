@@ -13,6 +13,14 @@
 # den Start, damit eine falsch geschriebene Gruppe nie stillschweigend den
 # Zugriff ändert. Namen und Adressen unten sind erfundene Beispiele.
 
+# Wer die Mitglieder (users) der Haushalte in der Weboberfläche pflegen darf
+# (Einstellungen → Haushalte): Benutzername oder bestätigte E-Mail-Adresse, wie
+# bei „users“. Zusätzlich zählen DOCUSHELF_ADMIN_USERS und immer das lokale
+# Notfallkonto. Achtung: Beim Speichern aus der Oberfläche schreibt DocuShelf
+# diese Datei neu – Kommentare gehen dabei verloren, die vorige Fassung bleibt
+# als households.yaml.bak liegen.
+admins: ["erika@example.org"]
+
 households:
 
   # -- Haushalt 1: die bisherige Installation -------------------------------------
@@ -26,7 +34,8 @@ households:
     # Wer hinein darf: Gruppen aus dem Anmeldedienst (Claim „groups“) und/oder
     # einzelne Konten (Benutzername oder bestätigte E-Mail-Adresse). Wer in beiden
     # Haushalten Mitglied ist, kann in der Oberfläche umschalten. Das lokale
-    # Notfallkonto darf in alle Haushalte.
+    # Notfallkonto darf in alle Haushalte. „users“ pflegen Admins am einfachsten
+    # in der Weboberfläche (wirkt sofort); „groups“ nur hier (wirkt nach Neustart).
     groups: [familie-a]
     users: []
 

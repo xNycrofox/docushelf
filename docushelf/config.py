@@ -247,6 +247,8 @@ class Settings:
     allowed_users: tuple[str, ...] = ()
     allowed_groups: tuple[str, ...] = ()
     allow_all_oidc_users: bool = False
+    # Accounts that may manage household members in the web interface (household mode only).
+    admin_users: tuple[str, ...] = ()
     admin_user: str = "admin"
     admin_password_hash: str | None = None
     admin_password: str | None = None
@@ -569,6 +571,7 @@ def load_settings(env: Mapping[str, str] | None = None, **overrides: Any) -> Set
         allowed_users=tuple(u.lower() for u in src.list("allowed_users")),
         allowed_groups=src.list("allowed_groups"),
         allow_all_oidc_users=src.bool("allow_all_oidc_users", False),
+        admin_users=tuple(u.casefold() for u in src.list("admin_users")),
         admin_user=src.str("admin_user", "admin") or "admin",
         admin_password_hash=src.str("admin_password_hash"),
         admin_password=src.str("admin_password"),

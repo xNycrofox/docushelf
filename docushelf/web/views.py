@@ -1085,6 +1085,7 @@ AUDIT_LABELS = {
     "login_denied": "Anmeldung abgelehnt",
     "token_create": "API-Token erstellt",
     "token_revoke": "API-Token widerrufen",
+    "household_members": "Haushaltsmitglieder geändert",
     "auto_file": "Automatisch abgelegt",
     "auto_review": "Automatische Ablage geprüft",
 }
@@ -1112,6 +1113,11 @@ def audit_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
             details.append(str(path))
     if entry.get("name") and action in ("create_rule", "delete_rule", "token_create", "token_revoke"):
         details.append(f"„{entry.get('name')}“")
+    if action == "household_members":
+        if entry.get("added"):
+            details.append(f"hinzugefügt: {entry.get('added')}")
+        if entry.get("removed"):
+            details.append(f"entfernt: {entry.get('removed')}")
     if entry.get("method") and action in ("login", "login_denied"):
         details.append("per SSO" if entry.get("method") == "oidc" else "lokal")
     for key, label in (

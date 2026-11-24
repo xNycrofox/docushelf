@@ -208,6 +208,51 @@
   </section>
 </div>
 
+{% if member_admin %}
+<section class="card" id="haushalte" aria-labelledby="households-title">
+  <div class="card-head"><h2 id="households-title">{{ icon('shield') }} Haushalte</h2></div>
+  <div class="card-body stack">
+    <p class="hint">Hier legst du fest, wer zu welchem Haushalt gehört. Trag den Benutzernamen aus dem Anmeldedienst oder die bestätigte E-Mail-Adresse ein; Groß-/Kleinschreibung ist egal, und eine Person darf in mehreren Haushalten sein. Änderungen gelten sofort – wer entfernt wird, verliert beim nächsten Seitenaufruf den Zugriff.</p>
+    {% for h in member_admin %}
+    <div class="member-household stack" id="haushalt-{{ h.id }}">
+      <h3>{{ h.name }} <span class="muted mono">({{ h.id }})</span></h3>
+      {% if h.users %}
+      <table class="table">
+        <thead><tr><th scope="col">Benutzer</th><th scope="col"><span class="visually-hidden">Aktion</span></th></tr></thead>
+        <tbody>
+          {% for u in h.users %}
+          <tr>
+            <td class="mono break">{{ u }}</td>
+            <td class="cell-action">
+              <form method="post" action="/einstellungen/haushalte/{{ h.id|urlpart }}/mitglieder/entfernen" data-confirm="„{{ u }}“ aus dem Haushalt „{{ h.name }}“ entfernen? Der Zugriff endet mit dem nächsten Seitenaufruf, außer über eine Gruppe." data-confirm-ok="Entfernen" data-confirm-danger>
+                {{ m.csrf() }}
+                <input type="hidden" name="user" value="{{ u }}">
+                <button class="btn btn-ghost btn-small btn-danger-text" type="submit">Entfernen</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">Noch keine einzelnen Benutzer.</p>
+      {% endif %}
+      <dl class="kv">
+        <div><dt>Gruppen</dt><dd>{% for g in h.groups %}<span class="chip chip-quiet mono">{{ g }}</span> {% else %}<span class="muted">keine</span>{% endfor %}</dd></div>
+      </dl>
+      <form class="inline-form" method="post" action="/einstellungen/haushalte/{{ h.id|urlpart }}/mitglieder">
+        {{ m.csrf() }}
+        <label class="visually-hidden" for="member-{{ h.id }}">Benutzer für {{ h.name }} hinzufügen</label>
+        <input id="member-{{ h.id }}" class="input" type="text" name="user" required maxlength="{{ max_member_length }}" autocomplete="off" placeholder="Benutzername oder E-Mail-Adresse">
+        <button class="btn" type="submit">{{ icon('plus') }} Hinzufügen</button>
+      </form>
+    </div>
+    {% endfor %}
+    <p class="hint">Gruppen kommen aus dem Anmeldedienst (Claim „groups“) und lassen sich nur dort bzw. in <span class="mono">households.yaml</span> ändern. Gespeichert wird in <span class="mono">config/households.yaml</span>; die vorige Fassung liegt danach als <span class="mono">households.yaml.bak</span> daneben. Kommentare in der Datei gehen beim Speichern verloren.</p>
+  </div>
+</section>
+{% endif %}
+
 <section class="card" id="tokens" aria-labelledby="tokens-title">
   <div class="card-head"><h2 id="tokens-title">{{ icon('key') }} API-Tokens</h2></div>
   <div class="card-body stack">
