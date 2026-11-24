@@ -1,0 +1,146 @@
+{#- Building blocks of the page "Eingangskanäle". Import with:
+    {% import "_channel_macros.html" as ch with context %} -#}
+{% import "_macros.html" as m with context %}
+
+{#- A form value typed last time (``typed``: the page was re-rendered for this form), else ``default``. -#}
+{% macro pick(v, typed, name, default) -%}{{ v[name] if typed and name in v else default }}{%- endmacro %}
+
+{% macro state(enabled, on='an', off='aus') -%}
+{% if enabled %}<span class="status status-ok"><span class="status-dot" aria-hidden="true"></span>{{ on }}</span>{% else %}<span class="status status-off"><span class="status-dot" aria-hidden="true"></span>{{ off }}</span>{% endif %}
+{%- endmacro %}
+
+{#- A small form that switches something on or off (hidden field "an" = the new state). -#}
+{% macro toggle(action, enabled, what, extra=None) -%}
+<form class="channel-toggle" method="post" action="{{ action }}">
+  {{ m.csrf() }}
+  <input type="hidden" name="an" value="{{ '0' if enabled else '1' }}">
+  {% if extra %}{% for name, value in extra.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}{% endif %}
+  <button class="btn btn-small{{ ' btn-ghost' if enabled else '' }}" type="submit" aria-label="{{ what }} {{ 'ausschalten' if enabled else 'einschalten' }}">{{ 'Ausschalten' if enabled else 'Einschalten' }}</button>
+</form>
+{%- endmacro %}
+
+{#- The message of the last action of a section (validation error or connection test). -#}
+{% macro message(key) -%}
+{% if form_section == key and form_message %}
+<div class="alert {{ 'alert-success' if form_ok else 'alert-error' }}" role="{{ 'status' if form_ok else 'alert' }}" data-channel-message>
+  {{ icon('check-circle' if form_ok else 'alert-circle') }}
+  <p>{{ form_message }}</p>
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro owner_field(id, value) -%}
+<div class="field">
+  <label for="{{ id }}">Person <span class="optional">(optional)</span></label>
+  <input id="{{ id }}" class="input" type="text" name="owner" value="{{ value or '' }}" maxlength="200" autocomplete="off" list="channel-members" placeholder="Benutzername aus dem Haushalt" data-channel-owner>
+</div>
+{%- endmacro %}
+
+{#- Create or edit a mailbox. ``box`` is None for a new one; ``v`` holds what was typed last time. -#}
+{% macro mailbox_form(key, box, has_password, v) -%}
+{%- set typed = form_section == key -%}
+{%- set uid = (box.name if box else 'neu') -%}
+<form class="stack channel-form" method="post" action="/einstellungen/kanaele/imap" data-channel-mailbox>
+  {{ m.csrf() }}
+  <input type="hidden" name="original" value="{{ box.name if box else '' }}">
+  <div class="field-row">
+    <div class="field">
+      <label for="imap-name-{{ uid }}">Name</label>
+      <input id="imap-name-{{ uid }}" class="input mono" type="text" name="name" required maxlength="32" pattern="[a-z0-9][a-z0-9-]*" value="{{ pick(v, typed, 'name', box.name if box else '') }}" placeholder="z. B. familie" autocomplete="off">
+    </div>
+    {{ owner_field('imap-owner-' ~ uid, pick(v, typed, 'owner', (box.owner if box else '') or '')) }}
+  </div>
+  <div class="field-row">
+    <div class="field">
+      <label for="imap-host-{{ uid }}">Server</label>
+      <input id="imap-host-{{ uid }}" class="input mono" type="text" name="host" required maxlength="200" value="{{ pick(v, typed, 'host', box.host if box else '') }}" placeholder="imap.example.org" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="imap-tls-{{ uid }}">Verschlüsselung</label>
+      {%- set tls = pick(v, typed, 'tls', box.tls if box else 'ssl') -%}
+      <select id="imap-tls-{{ uid }}" class="select" name="tls" data-channel-tls>
+        <option value="ssl"{% if tls == 'ssl' %} selected{% endif %}>SSL/TLS (meist Port 993)</option>
+        <option value="starttls"{% if tls == 'starttls' %} selected{% endif %}>STARTTLS (meist Port 143)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="imap-port-{{ uid }}">Port</label>
+      <input id="imap-port-{{ uid }}" class="input mono" type="number" name="port" min="1" max="65535" value="{{ pick(v, typed, 'port', box.port if box else '') }}" placeholder="993" data-channel-port>
+    </div>
+  </div>
+  <div class="field-row">
+    <div class="field">
+      <label for="imap-user-{{ uid }}">Benutzer</label>
+      <input id="imap-user-{{ uid }}" class="input mono" type="text" name="user" required maxlength="254" value="{{ pick(v, typed, 'user', box.user if box else '') }}" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="imap-password-{{ uid }}">Passwort</label>
+      <input id="imap-password-{{ uid }}" class="input" type="password" name="password" value="" maxlength="1000" autocomplete="new-password" placeholder="{{ 'gesetzt – leer lassen, um es zu behalten' if has_password else 'Passwort eingeben' }}">
+      {% if has_password %}<span class="hint">Ein Passwort ist gesetzt. Zum Ändern einfach ein neues eingeben.</span>{% endif %}
+    </div>
+  </div>
+  <div class="field-row">
+    <div class="field">
+      <label for="imap-folder-{{ uid }}">Abgerufener Ordner</label>
+      <input id="imap-folder-{{ uid }}" class="input mono" type="text" name="folder" maxlength="200" value="{{ pick(v, typed, 'folder', box.folder if box else 'INBOX') }}">
+    </div>
+    <div class="field">
+      <label for="imap-poll-{{ uid }}">Abruf alle … Sekunden</label>
+      <input id="imap-poll-{{ uid }}" class="input mono" type="number" name="poll_seconds" min="10" max="86400" value="{{ pick(v, typed, 'poll_seconds', box.poll_seconds if box else 60) }}">
+    </div>
+  </div>
+  <div class="field-row">
+    <div class="field">
+      <label for="imap-processed-{{ uid }}">Ordner für Verarbeitetes</label>
+      <input id="imap-processed-{{ uid }}" class="input mono" type="text" name="processed_folder" maxlength="200" value="{{ pick(v, typed, 'processed_folder', box.processed_folder if box else 'DocuShelf/Verarbeitet') }}">
+    </div>
+    <div class="field">
+      <label for="imap-rejected-{{ uid }}">Ordner für Abgelehntes</label>
+      <input id="imap-rejected-{{ uid }}" class="input mono" type="text" name="rejected_folder" maxlength="200" value="{{ pick(v, typed, 'rejected_folder', box.rejected_folder if box else 'DocuShelf/Abgelehnt') }}">
+    </div>
+    <div class="field">
+      <label for="imap-noattach-{{ uid }}">Ordner für Mails ohne Anhang</label>
+      <input id="imap-noattach-{{ uid }}" class="input mono" type="text" name="no_attachment_folder" maxlength="200" value="{{ pick(v, typed, 'no_attachment_folder', box.no_attachment_folder if box else 'DocuShelf/Ohne Anhang') }}">
+    </div>
+  </div>
+  <div class="field">
+    <label for="imap-senders-{{ uid }}">Erlaubte Absender</label>
+    <textarea id="imap-senders-{{ uid }}" class="textarea channel-senders mono" name="allowed_senders" rows="2" spellcheck="false" placeholder="erika@example.org, @example.org">{{ pick(v, typed, 'allowed_senders', box.allowed_senders|join(', ') if box else '') }}</textarea>
+    <span class="hint">Adressen oder ganze Domains (<span class="mono">@example.org</span>), durch Komma getrennt; <span class="mono">*</span> erlaubt alle. Mails anderer Absender landen im Ordner für Abgelehntes – gelöscht wird nie etwas.</span>
+  </div>
+  {%- set enabled = ('enabled' in v) if typed else (box.enabled if box else true) %}
+  <label class="checkbox"><input type="checkbox" name="enabled" value="1"{% if enabled %} checked{% endif %}> <span>Postfach abrufen</span></label>
+  <div class="button-row">
+    <button class="btn btn-primary" type="submit" name="aktion" value="speichern">{{ icon('check') }} {{ 'Speichern' if box else 'Postfach anlegen' }}</button>
+    <button class="btn" type="submit" name="aktion" value="testen" formnovalidate data-busy="Verbindung wird getestet …">{{ icon('refresh') }} Verbindung testen</button>
+  </div>
+  <p class="hint">Der Test meldet sich an, öffnet den Ordner nur lesend und meldet sich wieder ab. Gespeichert wird dabei nichts.</p>
+</form>
+{%- endmacro %}
+
+{#- Create or edit a watch folder. -#}
+{% macro watch_form(key, folder, v) -%}
+{%- set typed = form_section == key -%}
+{%- set uid = (folder.name if folder else 'neu') -%}
+<form class="stack channel-form" method="post" action="/einstellungen/kanaele/watch">
+  {{ m.csrf() }}
+  <input type="hidden" name="original" value="{{ folder.name if folder else '' }}">
+  <div class="field-row">
+    <div class="field">
+      <label for="watch-name-{{ uid }}">Name</label>
+      <input id="watch-name-{{ uid }}" class="input mono" type="text" name="name" required maxlength="64" value="{{ pick(v, typed, 'name', folder.name if folder else '') }}" placeholder="z. B. nas" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="watch-path-{{ uid }}">Pfad im Container</label>
+      <input id="watch-path-{{ uid }}" class="input mono" type="text" name="path" required maxlength="1024" value="{{ pick(v, typed, 'path', folder.path if folder else '') }}" placeholder="/watch/nas" autocomplete="off">
+    </div>
+  </div>
+  {%- set remove = ('remove_after_import' in v) if typed else (folder.remove_after_import if folder else true) %}
+  {%- set enabled = ('enabled' in v) if typed else (folder.enabled if folder else true) %}
+  <label class="checkbox"><input type="checkbox" name="remove_after_import" value="1"{% if remove %} checked{% endif %}> <span>Dateien nach der Übernahme aus dem Ordner entfernen</span></label>
+  <label class="checkbox"><input type="checkbox" name="enabled" value="1"{% if enabled %} checked{% endif %}> <span>Ordner überwachen</span></label>
+  <div class="button-row">
+    <button class="btn btn-primary" type="submit">{{ icon('check') }} {{ 'Speichern' if folder else 'Watch-Ordner anlegen' }}</button>
+  </div>
+</form>
+{%- endmacro %}

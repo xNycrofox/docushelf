@@ -111,10 +111,10 @@ def test_list_shows_folders_first_then_documents(client, archive):
     headers = [re.sub(r"<[^>]+>", "", h).strip() for h in re.findall(r"<th scope=\"col\"[^>]*>(.*?)</th>", listing, re.S)]
     assert headers == ["Name", "Datum", "Absender", "Größe / Inhalt"]
     rows = list_rows(html)
-    assert rows[:3] == [
-        "Steuer 30.09.2025 2 Dokumente · 1 Ordner",  # newest document inside, subfolders included
+    assert rows[:3] == [  # name, A–Z by default
         "Bank 12.03.2025 1 Dokument",
         "Leer – 0 Dokumente",
+        "Steuer 30.09.2025 2 Dokumente · 1 Ordner",  # newest document inside, subfolders included
     ]
     assert rows[3].startswith("Abo 01.02.2025 Verlag ") and rows[3].endswith(("KB", "Bytes"))
     assert rows[4].startswith("Jahresübersicht 05.01.2023")
@@ -122,10 +122,10 @@ def test_list_shows_folders_first_then_documents(client, archive):
     # Every row has one real link (keyboard) and is marked for the whole-row click.
     tags = parse(listing).tags
     main_links = [attrs["href"] for tag, attrs in tags if tag == "a" and "data-row-main" in attrs]
-    assert main_links[:3] == ["/archiv/Finanzen/Steuer", "/archiv/Finanzen/Bank", "/archiv/Finanzen/Leer"]
+    assert main_links[:3] == ["/archiv/Finanzen/Bank", "/archiv/Finanzen/Leer", "/archiv/Finanzen/Steuer"]
     assert f"/dokument/{archive.abo.id}" in main_links and len(main_links) == 6
     assert sum(1 for tag, attrs in tags if tag == "tr" and "data-row-link" in attrs) == 6
-    assert 'aria-sort="descending"' in listing  # date, newest first by default
+    assert 'aria-sort="ascending"' in listing  # name, A–Z by default
 
 
 @pytest.mark.parametrize(("sort", "expected"), [
@@ -143,7 +143,7 @@ def test_list_sorting(client, archive, sort, expected):
 def test_column_headers_sort_and_toggle(client, archive):
     client.cookies.set(VIEW, "liste")
     _hidden, listing = panel(page(client, "/archiv/Finanzen"), "liste")
-    assert 'href="/archiv/Finanzen?sort=title"' in listing and 'href="/archiv/Finanzen?sort=date_asc"' in listing
+    assert 'href="/archiv/Finanzen?sort=title_desc"' in listing and 'href="/archiv/Finanzen?sort=date_desc"' in listing
     _hidden, listing = panel(page(client, "/archiv/Finanzen?sort=title"), "liste")
     assert re.search(r'<th scope="col" class="col-name" aria-sort="ascending">\s*<a href="/archiv/Finanzen\?sort=title_desc"', listing)
     assert 'sort-icon is-asc' in listing and 'href="/archiv/Finanzen?sort=date_desc"' in listing

@@ -27,6 +27,12 @@ Rules:
   With ``remove_after_import=False`` the folder is never modified: files are
   copied and their hash is remembered, so every file is imported once.
 
+* **Scanner endpoints** (``SourceConfig.endpoints``) are subfolders of a drop
+  zone that belong to one household member (``quellen/smb/erika``). Files
+  below them get the member as ``owner`` in their context (see
+  :mod:`docushelf.channels.origin`); a disabled endpoint is not entered, its
+  files wait until it is enabled again.
+
 Every household has its own intake: it scans only the sources of its own
 settings (``eingang/quellen/*`` below the household's data directory plus
 the household's watch folders) and creates items only in its own inbox. A
@@ -50,6 +56,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from ..channels.origin import mark as mark_origin
 from ..channels.sendung import MANIFEST, read_sendung
 from ..config import SourceConfig
 from ..errors import PathError
@@ -359,6 +366,10 @@ class Intake:
                 if entry.is_dir(follow_symlinks=False):
                     if state.foreign and os.path.realpath(path) in state.foreign:
                         continue  # another household's watch folder
+                    if depth == 0 and state.source.endpoints:
+                        endpoint = state.source.endpoint(name)
+                        if endpoint is not None and not endpoint.enabled:
+                            continue  # switched off: the files wait
                     if depth < MAX_DEPTH and self._scan_dir(state, path, depth + 1):
                         took = True
                     continue
@@ -556,6 +567,8 @@ class Intake:
         """
         external = state.source.path is not None
         origin_hash: str | None = None
+        if state.source.endpoints:
+            context = self._with_endpoint(state, files[0], context)
         if external:
             try:
                 origin_hash = fsops.sha256_files(files)
@@ -610,6 +623,20 @@ class Intake:
                         self._handled[str(path)] = (kept_signature, origin_hash)
         self._created(state, item)
         return _CREATED
+
+    @staticmethod
+    def _with_endpoint(state: _Pass, path: Path, context: dict[str, Any]) -> dict[str, Any]:
+        """Add owner and endpoint of a file below a member's scanner folder to its context."""
+        try:
+            parts = path.relative_to(state.root).parts
+        except ValueError:
+            return context
+        if len(parts) < 2:
+            return context  # directly in the drop zone
+        endpoint = state.source.endpoint(parts[0])
+        if endpoint is None:
+            return context
+        return mark_origin(dict(context), owner=endpoint.owner, endpoint=endpoint.label)
 
     def _remove_sources(self, files: list[Path]) -> list[Path]:
         """Delete imported files from an external folder; returns those that could not be deleted."""

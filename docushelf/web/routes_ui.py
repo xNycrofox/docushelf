@@ -46,10 +46,10 @@ MAX_PREVIEW_PAGES = 60
 LOG_TAIL_LINES = 60
 TEXT_PREVIEW_CHARS = 6000
 ARCHIVE_SORTS = {
-    "date_desc": "Neueste zuerst",
-    "date_asc": "Älteste zuerst",
     "title": "Titel A–Z",
     "title_desc": "Titel Z–A",
+    "date_desc": "Neueste zuerst",
+    "date_asc": "Älteste zuerst",
 }
 # How long the settings page waits for the language model test; a slower
 # answer is kept and shown on the next visit.
@@ -778,7 +778,7 @@ def _refresh_item(request: Request, form: Any, user: Any, item_id: str) -> Respo
 @router.get("/archiv", response_class=HTMLResponse)
 def archive_root(
     request: Request,
-    sort: str = "date_desc",
+    sort: str | None = None,
     seite: int = 1,
     ansicht: str | None = None,
     user: User = Depends(require_user),
@@ -790,7 +790,7 @@ def archive_root(
 def archive_folder(
     request: Request,
     path: str,
-    sort: str = "date_desc",
+    sort: str | None = None,
     seite: int = 1,
     ansicht: str | None = None,
     user: User = Depends(require_user),
@@ -830,12 +830,16 @@ def _newest_date(services: Any, folder: str) -> Any:
 
 def _documents_page(index: Any, folder: str, order: str, page: int, total: int) -> tuple[list[Any], bool]:
     """One page of the documents directly in ``folder`` and whether more pages follow."""
-    if order == "title_desc":
-        # Reverse alphabetical order: the matching slice of the A–Z order, read backwards.
-        end = max(0, total - (page - 1) * ARCHIVE_PAGE_SIZE)
-        start = max(0, end - ARCHIVE_PAGE_SIZE)
-        docs = index.list_in_folder(folder, order="title", limit=end - start, offset=start) if end > start else []
-        return list(reversed(docs)), start > 0
+    if order in ("title", "title_desc"):
+        # Natural order ("2 …" before "10 …") is not something SQLite can sort by:
+        # read the folder (only its direct documents) and sort here.
+        everything = index.list_in_folder(folder, order="title", limit=max(total, 0) + ARCHIVE_PAGE_SIZE + 1)
+        everything.sort(
+            key=lambda doc: (views.natural_key(doc.title or doc.filename or ""), views.natural_key(doc.filename or "")),
+            reverse=order == "title_desc",
+        )
+        start = (page - 1) * ARCHIVE_PAGE_SIZE
+        return everything[start : start + ARCHIVE_PAGE_SIZE], len(everything) > start + ARCHIVE_PAGE_SIZE
     docs = index.list_in_folder(folder, order=order, limit=ARCHIVE_PAGE_SIZE + 1, offset=(page - 1) * ARCHIVE_PAGE_SIZE)
     return docs[:ARCHIVE_PAGE_SIZE], len(docs) > ARCHIVE_PAGE_SIZE
 
@@ -855,7 +859,19 @@ def _folder_exists(services: Any, folder: str) -> bool:
     return path.is_dir() and not path.is_symlink()
 
 
-def _archive_page(request: Request, user: Any, path: str, sort: str, seite: Any, ansicht: str | None = None) -> Response:
+def _archive_sort(request: Request, sort: str | None) -> tuple[str, bool]:
+    """The order to show and whether it was chosen just now (and is to be remembered).
+
+    A sort in the URL wins; otherwise the last choice from the cookie, otherwise by name."""
+    if sort in ARCHIVE_SORTS:
+        return str(sort), True
+    remembered = request.cookies.get(views.SORT_COOKIE)
+    if remembered in ARCHIVE_SORTS:
+        return str(remembered), False
+    return views.DEFAULT_SORT, False
+
+
+def _archive_page(request: Request, user: Any, path: str, sort: str | None, seite: Any, ansicht: str | None = None) -> Response:
     services = get_services(request)
     try:
         folder = check_relative((path or "").strip("/"))
@@ -889,7 +905,9 @@ def _archive_page(request: Request, user: Any, path: str, sort: str, seite: Any,
         for entry in folders
         if (entry.rsplit("/", 1)[0] if "/" in entry else "") == folder and entry != folder
     ]
-    order = sort if sort in ARCHIVE_SORTS else "date_desc"
+    order, chosen = _archive_sort(request, sort)
+    # Tiles show folders by name (reversed for Z–A); their dates are not on the cards.
+    subfolders.sort(key=lambda sub: views.natural_key(sub["name"]), reverse=order == "title_desc")
     page = _page_number(seite)
     direct = int(counts.get(folder, 0))
     docs, has_more = _documents_page(index, folder, order, page, direct)
@@ -898,7 +916,7 @@ def _archive_page(request: Request, user: Any, path: str, sort: str, seite: Any,
     if page == 1:
         rows = [{**sub, "newest": _newest_date(services, sub["path"])} for sub in subfolders]
         list_folders = views.sort_folder_rows(rows, order)
-    return render(
+    response = render(
         request,
         "archive.html",
         {
@@ -920,8 +938,20 @@ def _archive_page(request: Request, user: Any, path: str, sort: str, seite: Any,
             "view": views.archive_view(request.cookies.get(views.VIEW_COOKIE)),
             "list_folders": list_folders,
             "list_sorting": views.list_sorting(order),
+            "default_sort": views.DEFAULT_SORT,
         },
     )
+    if chosen and request.cookies.get(views.SORT_COOKIE) != order:
+        response.set_cookie(
+            views.SORT_COOKIE,
+            order,
+            max_age=views.SORT_COOKIE_MAX_AGE,
+            path="/",
+            samesite="lax",
+            secure=bool(getattr(services.settings, "cookies_secure", False)),
+            httponly=True,
+        )
+    return response
 
 
 @router.post("/archiv/ordner/neu")
@@ -1945,6 +1975,12 @@ def _revoke_token(request: Request, form: Any, user: Any, token_id: str) -> Resp
     _audit(services, user, "token_revoke", token=token_id, name=name)
     flash(request, f"Token „{name}“ widerrufen. Skripte mit diesem Token haben keinen Zugriff mehr.")
     return redirect("/einstellungen#tokens")
+
+
+# Settings page "Eingangskanäle" (/einstellungen/kanaele, admins only).
+from .routes_channels import router as _channels_router  # noqa: E402
+
+router.include_router(_channels_router)
 
 
 __all__ = ["router"]

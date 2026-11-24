@@ -454,6 +454,75 @@ DOCUSHELF_IMAP_ALLOWED_SENDERS=alex@example.net,sam@example.net,@example.net
 Das ist auch der robuste Ausweichweg für den Drucker: Scan-to-Mail über einen gewöhnlichen
 Mailanbieter funktioniert unabhängig vom VPN. Beide Wege können gleichzeitig eingerichtet sein.
 
+### Eingangskanäle in der Weboberfläche (`channels.yaml`)
+
+Unter **Einstellungen → Eingangskanäle → Verwalten** (`/einstellungen/kanaele`) schalten Admins
+die Kanäle eines Haushalts ein und aus und richten sie ein – ohne Neustart. Admins sind mit einem
+Haushalt das lokale Notfallkonto sowie die Konten aus `DOCUSHELF_ADMIN_USERS` und die Mitglieder
+der Gruppen aus `DOCUSHELF_ADMIN_GROUPS`; mit mehreren Haushalten die Admins aus Abschnitt 13
+(`admins`/`admin_groups` in `households.yaml`). Andere sehen den Knopf nicht und bekommen 403.
+
+| Kanal | In der Oberfläche |
+|---|---|
+| Hochladen | immer an (nur zur Info) |
+| Mail-Postfächer (IMAP) | beliebig viele, je Name, Server, Port, SSL/TLS oder STARTTLS, Benutzer, Passwort, Ordner (abrufen, Verarbeitetes, Abgelehntes, ohne Anhang), erlaubte Absender, Intervall, an/aus, optional eine **Person**; Knopf **Verbindung testen** (anmelden, Ordner nur lesend öffnen, abmelden) |
+| Scan per Mail (SMTP) | an/aus, Empfängeradressen des Haushalts, je Adresse optional eine Person (z. B. `scan-erika@…`) |
+| Scanner-Ordner (SMB/FTP) | je Kanal an/aus, Unterordner je Person unter `eingang/quellen/<smb\|ftp>/<ordner>/`, je Ordner an/aus |
+| Watch-Ordner | Name, Pfad, „Dateien nach der Übernahme entfernen“, an/aus |
+
+- **Gespeichert** wird je Haushalt in `config/channels.yaml` (bei mehreren Haushalten
+  `haushalte/<id>/config/channels.yaml`), atomar, die vorige Fassung als `channels.yaml.bak`.
+  Vor dem Ersetzen wird die neue Datei mit demselben Prüfer gelesen wie beim Start; ist etwas
+  ungültig, bleibt alles, wie es war, und die Seite zeigt den Fehler auf Deutsch.
+- **Passwörter** (IMAP) stehen nie in `channels.yaml`, sondern je Postfach in
+  `config/secrets/imap-<name>` (Datei `600`, Ordner `700`). Die Oberfläche zeigt nur „gesetzt“;
+  ein neues Passwort ersetzt das alte, ein leeres Feld behält es.
+- **Umgebungsvariablen bleiben Voreinstellung:** Solange es keine `channels.yaml` gibt, gilt alles
+  aus der `.env` (und `households.yaml`) wie bisher. Mit der ersten Änderung in der Oberfläche
+  übernimmt DocuShelf diese Werte in die Datei – auch das IMAP-Passwort aus der `.env` wandert
+  dabei nach `config/secrets/`. Ab dann gilt für diesen Haushalt **nur noch die Datei**:
+  `DOCUSHELF_IMAP_*`, `DOCUSHELF_WATCH_FOLDERS`, `DOCUSHELF_SMTP_RECIPIENT` bzw.
+  `imap`/`smtp_recipients`/`watch_folders` aus `households.yaml` werden für ihn ignoriert. Zurück
+  zu den Umgebungsvariablen: Datei löschen und neu starten.
+- **Was die Oberfläche nicht kann:** Den SMTP-Server selbst schaltet weiterhin
+  `DOCUSHELF_SMTP_ENABLED` ein (Port, `DOCUSHELF_SMTP_ALLOWED_NETWORKS`, `DOCUSHELF_SMTP_BIND`); ist
+  er aus, zeigt die Seite einen deutlichen Hinweis. Samba- und FTP-Container laufen außerhalb von
+  DocuShelf (Profile `smb`/`ftp`); die Seite zeigt nur, was am Drucker einzutragen ist. Neue
+  Watch-Ordner muss der Container sehen können (Mount in `compose.yaml`); Pfade in den Daten von
+  DocuShelf oder eines anderen Haushalts werden abgelehnt.
+- **Personen und Endpunkte:** Eine Person ist ein Benutzer des Haushalts (wie unter `users`; ohne
+  eingetragene Benutzer ist jeder Name erlaubt). Dokumente aus ihrem Postfach, an ihre Scan-Adresse
+  oder aus ihrem Scanner-Ordner bekommen sie als `owner` im Kontext (`item.json`) – für spätere
+  Regeln – und erscheinen im Eingang als „von Erika · Scanner“. Ein Scanner-Ordner wird mit
+  denselben Rechten angelegt wie `eingang/quellen/<kanal>` selbst (bei SMB also `1733`), damit
+  das Konto `scanner` hineinschreiben kann. Ist ein Ordner ausgeschaltet, bleiben seine Dateien
+  liegen, bis er wieder an ist; entfernt man ihn, bleibt der Ordner bestehen und Dateien darin
+  werden ohne Person übernommen.
+  Am Drucker: SMB `\\100.64.0.10\scan\erika`, FTP `ftp://100.64.0.10/erika`.
+- **Live:** Speichern oder Umschalten startet nur die Mail-Abrufe und die Eingangsüberwachung
+  dieses Haushalts neu; Adressen für Scan per Mail gelten sofort. Jede Änderung steht im Protokoll
+  („Eingangskanäle geändert“, Aktion `channels_change`) – ohne Passwörter.
+- Eine von Hand kaputt editierte `channels.yaml` verhindert den Start mit einer deutschen
+  Fehlermeldung (wie `households.yaml`); `channels.yaml.bak` ist die letzte gute Fassung.
+
+### iPhone und iPad: Kurzbefehl ohne Mac
+
+Unter **Einstellungen → Handy & Tablet** gibt es für iPhone/iPad den Knopf
+**Kurzbefehl installieren** (`/kurzbefehl`, nur angemeldet), daneben die Serveradresse zum
+Kopieren und **Token für dieses Handy erstellen** (ein Token `iPhone-Kurzbefehl` für das eigene
+Konto, wird einmal angezeigt). Nutzer brauchen dafür keinen Mac. Der Betreiber stellt den
+Kurzbefehl einmal bereit – eine der beiden Möglichkeiten:
+
+- **Datei:** auf irgendeinem Mac einmal erzeugen und signieren (`contrib/ios/README.md`) und als
+  `config/shortcuts/DocuShelf senden.shortcut` im Datenverzeichnis ablegen. `/kurzbefehl` liefert
+  sie als Download aus.
+- **iCloud-Link:** Kurzbefehl in der App Kurzbefehle teilen → „iCloud-Link kopieren“ und in die
+  `.env`: `DOCUSHELF_IOS_SHORTCUT_URL=https://www.icloud.com/shortcuts/…` (nur `https://`).
+  `/kurzbefehl` leitet dorthin weiter.
+
+Liegt eine Datei vor, hat sie Vorrang. Ohne beides fehlt der Knopf, und die Seite verweist auf die
+Anleitung (dort steht auch, wie man den Kurzbefehl ganz ohne Mac direkt am iPhone baut).
+
 ## 7. Sprachmodell (KI) und automatische Ablage
 
 Beides ist optional und zunächst ausgeschaltet. DocuShelf macht Ablagevorschläge auch ohne KI –
@@ -829,6 +898,7 @@ Eine kommentierte Vorlage steht in `deploy/households.example.yaml`:
 
 ```yaml
 admins: ["erika@example.org"]    # dürfen Mitglieder in der Weboberfläche pflegen (s. u.)
+admin_groups: [software-admins]  # alle in diesen Gruppen sind ebenfalls Admins (s. u.)
 households:
   - id: familie-a                # a-z, 0-9, „-“; stabil – steckt in Pfaden und Tokens
     name: "Familie Mustermann"
@@ -888,8 +958,18 @@ Haushalt Name, Kennung, die eingetragenen Benutzer (hinzufügen und entfernen) u
 - **Admins** sind das lokale Notfallkonto, die Einträge unter `admins:` in `households.yaml` und
   die Konten in `DOCUSHELF_ADMIN_USERS` (kommagetrennt). Gemeint ist jeweils der Benutzername
   aus dem Anmeldedienst oder die bestätigte E-Mail-Adresse, Groß-/Kleinschreibung egal. Andere
-  sehen den Abschnitt nicht und bekommen beim Ändern „Keine Berechtigung“ (403). Ein Admin muss
-  selbst zu einem Haushalt gehören, um die Einstellungen öffnen zu können.
+  sehen den Abschnitt nicht und bekommen beim Ändern „Keine Berechtigung“ (403).
+- **Admins per Gruppe:** Zusätzlich ist jedes SSO-Konto Admin, das in einer Gruppe unter
+  `admin_groups:` in `households.yaml` oder in `DOCUSHELF_ADMIN_GROUPS` (kommagetrennt) steht,
+  z. B. `admin_groups: [software-admins]`. Maßgeblich ist der Claim `groups` der Anmeldung
+  (Groß-/Kleinschreibung egal); wer in Authentik in die Gruppe kommt oder herausfällt, ist das ab
+  der nächsten Anmeldung. Die Admin-Gruppe gibt **keinen** Zugriff auf einen Haushalt – dafür
+  braucht es weiterhin `groups`/`users` eines Haushalts.
+- Ein Admin muss selbst zu einem Haushalt gehören, um die Einstellungen öffnen zu können; wer nur
+  Admin ist, aber zu keinem Haushalt gehört, wird bei der SSO-Anmeldung abgewiesen wie jeder ohne
+  Haushalt (das lokale Notfallkonto darf immer in alle Haushalte). Bindet die
+  Anwendung in Authentik nur bestimmte Gruppen, muss ein Admin außerdem darüber überhaupt
+  anmelden dürfen (Policy-Binding).
 - Eingetragen wird ein Benutzername oder eine E-Mail-Adresse (höchstens 200 Zeichen); doppelte
   Einträge im selben Haushalt werden abgelehnt, eine Person darf aber in mehreren Haushalten sein.
 - Die Änderung wirkt **sofort**: Wer hinzugefügt wird, kann sich gleich anmelden bzw. umschalten;
@@ -1089,6 +1169,11 @@ Mail anhand der Empfängeradresse einem Haushalt zu (`smtp_recipients` in `house
 - Eine unbekannte Adresse wird mit `550` und einem deutschen Text abgewiesen
   („Diese Adresse ist keinem Haushalt zugeordnet“); es gibt weiterhin **kein Relay**.
 - `DOCUSHELF_SMTP_RECIPIENT` ist optional und bedient weiter den Haushalt mit `path: "."`.
+- Adressen lassen sich auch in der Oberfläche pflegen (*Einstellungen → Eingangskanäle*,
+  Abschnitt 6), auch je Person. Sobald ein Haushalt eine eigene `config/channels.yaml` hat, gelten
+  für ihn nur deren Adressen; `smtp_recipients` aus `households.yaml` (und für den Haushalt mit
+  `path: "."` `DOCUSHELF_SMTP_RECIPIENT`) zählen dann nicht mehr. Eine Adresse, die schon ein anderer
+  Haushalt empfängt, lehnt die Oberfläche ab.
 - Die erlaubten Absender-Netze (`DOCUSHELF_SMTP_ALLOWED_NETWORKS`) und die Anmeldung
   (`DOCUSHELF_SMTP_USER`) gelten für alle Haushalte gemeinsam. Die Adresse ist also nur eine
   **Zuordnung**, kein Zugriffsschutz: Ein Gerät im erlaubten Netz, das die Adresse eines fremden
@@ -1100,7 +1185,12 @@ Mail anhand der Empfängeradresse einem Haushalt zu (`smtp_recipients` in `house
 
 - **IMAP** ruft je Haushalt ein eigenes Postfach ab (`imap:` im Haushalt). Jeder Abruf schreibt nur
   in die Drop-Zone seines Haushalts (`<haushalt>/eingang/quellen/mail`); verarbeitete Mails
-  wandern wie gewohnt in IMAP-Ordner, die Absender-Erlaubnisliste gilt je Haushalt.
+  wandern wie gewohnt in IMAP-Ordner, die Absender-Erlaubnisliste gilt je Haushalt. In der
+  Oberfläche kann ein Haushalt mehrere Postfächer bekommen, auch eins pro Person (Abschnitt 6);
+  die Passwörter liegen dann in `<haushalt>/config/secrets/`.
+- **Admins** (`admins`, `admin_groups`) verwalten in der Oberfläche die Eingangskanäle des
+  Haushalts, in dem sie gerade arbeiten – für einen anderen Haushalt erst umschalten (dafür
+  müssen sie selbst Mitglied sein).
 - **API-Tokens gehören zu einem Haushalt** (`<haushalt>/config/tokens.yaml`). Ein Token, das ein
   Haushalt erstellt, lädt immer in diesen Haushalt hoch – der iPhone-Kurzbefehl und das Android-Teilen
   landen also automatisch im richtigen Archiv, ohne dass der Haushalt angegeben werden muss. Das

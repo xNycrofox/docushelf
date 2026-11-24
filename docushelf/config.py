@@ -161,6 +161,21 @@ class AutoFileConfig:
 
 
 @dataclass(frozen=True)
+class EndpointConfig:
+    """A subfolder of a drop zone that belongs to one person (e.g. ``quellen/smb/erika``).
+
+    Files below it get ``owner`` (and the German ``label`` of the endpoint) in
+    their item context. A disabled endpoint is skipped by the intake: files
+    stay where they are until it is enabled again.
+    """
+
+    folder: str
+    owner: str | None = None
+    enabled: bool = True
+    label: str = "Scanner"
+
+
+@dataclass(frozen=True)
 class SourceConfig:
     """A drop zone the intake watches. ``path=None`` means ``eingang/quellen/<name>``."""
 
@@ -170,6 +185,16 @@ class SourceConfig:
     # Files in external watch folders are removed after they were taken over.
     # Set to False to leave them (they are then remembered by hash).
     remove_after_import: bool = True
+    # Per-person subfolders (scanner endpoints), see EndpointConfig.
+    endpoints: tuple[EndpointConfig, ...] = ()
+
+    def endpoint(self, folder: str) -> EndpointConfig | None:
+        """The endpoint whose folder is ``folder`` (case-insensitive), if any."""
+        key = folder.casefold()
+        for endpoint in self.endpoints:
+            if endpoint.folder.casefold() == key:
+                return endpoint
+        return None
 
 
 @dataclass(frozen=True)
@@ -189,6 +214,10 @@ class ImapConfig:
     no_attachment_folder: str = "DocuShelf/Ohne Anhang"
     allowed_senders: tuple[str, ...] = ()
     poll_seconds: int = 60
+    # Name of the mailbox in the channel settings and the household member its
+    # mail belongs to (written into the item context); both optional.
+    name: str | None = None
+    owner: str | None = None
 
 
 @dataclass(frozen=True)
@@ -247,8 +276,10 @@ class Settings:
     allowed_users: tuple[str, ...] = ()
     allowed_groups: tuple[str, ...] = ()
     allow_all_oidc_users: bool = False
-    # Accounts that may manage household members in the web interface (household mode only).
+    # Accounts and OIDC groups that may manage household members in the web interface
+    # (household mode only).
     admin_users: tuple[str, ...] = ()
+    admin_groups: tuple[str, ...] = ()
     admin_user: str = "admin"
     admin_password_hash: str | None = None
     admin_password: str | None = None
@@ -290,6 +321,9 @@ class Settings:
     trash_retention_days: int = 30
     keep_originals_days: int = 30
     notify_url: str | None = None
+    # iPhone shortcut for "/kurzbefehl": an iCloud share link used when no signed
+    # file lies in <data>/config/shortcuts/.
+    ios_shortcut_url: str | None = None
 
     # Households: display name of the only household without households.yaml, and
     # the global data root when these settings belong to a household elsewhere
@@ -444,6 +478,16 @@ def _parse_watch_folders(value: tuple[str, ...], stable: float) -> list[SourceCo
     return result
 
 
+def _parse_shortcut_url(value: str | None) -> str | None:
+    """``DOCUSHELF_IOS_SHORTCUT_URL``: an https link (e.g. an iCloud share link of the shortcut)."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    if not text.lower().startswith("https://") or any(ch.isspace() for ch in text) or len(text) > 2000:
+        raise ConfigError(f"{PREFIX}IOS_SHORTCUT_URL muss ein https-Link sein (z. B. https://www.icloud.com/shortcuts/…).")
+    return text
+
+
 def _load_llm(src: _Source) -> LlmConfig | None:
     """The language model settings, or None while ``DOCUSHELF_LLM_ENABLED`` is off."""
     if not src.bool("llm_enabled", False):
@@ -572,6 +616,7 @@ def load_settings(env: Mapping[str, str] | None = None, **overrides: Any) -> Set
         allowed_groups=src.list("allowed_groups"),
         allow_all_oidc_users=src.bool("allow_all_oidc_users", False),
         admin_users=tuple(u.casefold() for u in src.list("admin_users")),
+        admin_groups=tuple(dict.fromkeys(g.casefold() for g in src.list("admin_groups"))),
         admin_user=src.str("admin_user", "admin") or "admin",
         admin_password_hash=src.str("admin_password_hash"),
         admin_password=src.str("admin_password"),
@@ -601,6 +646,7 @@ def load_settings(env: Mapping[str, str] | None = None, **overrides: Any) -> Set
         trash_retention_days=src.int("trash_retention_days", 30),
         keep_originals_days=src.int("keep_originals_days", 30),
         notify_url=src.str("notify_url"),
+        ios_shortcut_url=_parse_shortcut_url(src.str("ios_shortcut_url")),
         household_name=(src.str("household_name") or "").strip() or DEFAULT_HOUSEHOLD_NAME,
         start_background=src.bool("start_background", True),
     )

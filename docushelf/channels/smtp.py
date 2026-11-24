@@ -374,6 +374,10 @@ class SmtpReceiver:
             return None
 
     def _single_resolver(self, address: str) -> "Services | None":
+        channels = getattr(self.services, "channels", None)
+        if channels is not None and hasattr(channels, "smtp_route"):
+            # The household's addresses (channel settings; by default the configured recipient).
+            return self.services if channels.smtp_route(address) is not None else None
         return self.services if address == self.recipient else None
 
     def _note_refused_connection(self, peer: Any, local: Any) -> None:
@@ -410,16 +414,19 @@ class SmtpReceiver:
         mail recognize the copy by its key).
         """
         recipients = list(recipients)
-        targets: list[Any] = []
+        targets: list[tuple[Any, str]] = []
         for address in recipients:
             services = self.resolve(address)
-            if services is not None and not any(services is known for known in targets):
-                targets.append(services)
+            if services is not None and not any(services is known for known, _address in targets):
+                targets.append((services, address))
         if not targets:
             # Accepted at RCPT time, but its household is gone now.
             log.warning("SMTP: no household for the recipients %s any more", recipients)
             return REPLY_TEMPORARY
-        replies = [self.store(raw, envelope_from=envelope_from, peer=peer, services=services) for services in targets]
+        replies = [
+            self.store(raw, envelope_from=envelope_from, peer=peer, services=services, recipient=address)
+            for services, address in targets
+        ]
         for reply in replies:
             if not reply.startswith("2"):
                 return reply
@@ -432,8 +439,13 @@ class SmtpReceiver:
         envelope_from: str | None = None,
         peer: str | None = None,
         services: "Services | None" = None,
+        recipient: str | None = None,
     ) -> str:
-        """Write an accepted mail as a batch into one household and return the SMTP reply."""
+        """Write an accepted mail as a batch into one household and return the SMTP reply.
+
+        ``recipient`` is the address the mail was accepted for; an address that
+        belongs to one member (channel settings) puts that member into the context.
+        """
         services = services if services is not None else self.services
         if services is None:
             raise ValueError("no household to store the mail in")
@@ -452,6 +464,9 @@ class SmtpReceiver:
             context["mail_from"] = normalize_address(envelope_from)
         # Scan-to-mail: the device sending the mail is not the author of the document.
         context["forwarded_by_owner"] = True
+        channels = getattr(services, "channels", None)
+        if channels is not None and recipient and hasattr(channels, "mark_smtp"):
+            channels.mark_smtp(context, recipient)
         batch = write_sendung(services.layout.source_dir("smtp"), documents, context=context)
         index.mark_mail_seen(key)
         with self._stats_lock:
@@ -495,6 +510,10 @@ def registry_resolver(registry: Any, recipient: str | None = None) -> Resolver:
         household = registry.by_smtp_recipient(normalized)
         if household is None and global_recipient and normalized == global_recipient:
             household = _root_household(registry)
+            uses_file = getattr(registry, "uses_channel_file", None)
+            if household is not None and uses_file is not None and uses_file(household.id):
+                # The household manages its addresses in the web interface; the global one is not among them.
+                household = None
         if household is None:
             return None
         return registry.services(household.id)

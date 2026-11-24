@@ -13,7 +13,6 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const TOAST_KEY = "docushelf:toasts";
 const UPLOAD_KEY = "docushelf:uploaded-at";
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
-const smallScreen = () => window.matchMedia("(max-width: 760px)").matches;
 
 const csrfToken = () => $('meta[name="csrf-token"]')?.content || "";
 // Several households: the household this page belongs to (the server refuses the
@@ -1266,36 +1265,6 @@ function initFilingForm() {
   }
 }
 
-// ------------------------------------------------------- preview strip
-
-function initPreview() {
-  const frame = $("iframe[data-preview-frame]");
-  if (!frame) return;
-  // Browsers without a built-in PDF viewer (some embedded and kiosk browsers) would
-  // show an empty frame: fall back to the page images, as on phones.
-  const inlinePdf = navigator.pdfViewerEnabled !== false;
-  if (!inlinePdf) {
-    document.documentElement.classList.add("no-pdf-viewer");
-    frame.removeAttribute("src");
-  }
-  const base = frame.dataset.src;
-  const thumbs = $$("a.page-thumb[data-page]");
-  const show = (page) => {
-    frame.src = `${base}#page=${page}&view=FitH&navpanes=0`;
-    for (const thumb of thumbs) thumb.classList.toggle("is-current", Number(thumb.dataset.page) === page);
-  };
-  for (const thumb of thumbs) {
-    thumb.addEventListener("click", (event) => {
-      // On phones the large page image (new tab) is easier to read than the embedded PDF.
-      if (event.ctrlKey || event.metaKey || event.shiftKey || smallScreen() || !inlinePdf) return;
-      event.preventDefault();
-      show(Number(thumb.dataset.page));
-    });
-  }
-  const match = /page=(\d+)/.exec(window.location.hash);
-  if (match && inlinePdf) show(Number(match[1]));
-}
-
 // ------------------------------------------------------ search suggestions
 
 function suggestionWords(data) {
@@ -1465,7 +1434,6 @@ function start() {
   initBatch();
   initProcessing();
   initItemWatch();
-  initPreview();
   initViewToggle();
   initRowLinks();
   $$("input[data-suggest]").forEach(setupSuggest);

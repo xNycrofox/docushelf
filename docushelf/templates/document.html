@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
+{% import "_viewer.html" as v with context %}
+{% block body_class %}layout-wide{% endblock %}
 {% block title %}{{ doc.title }}{% endblock %}
 {% block content %}
 <script type="application/json" id="folders-data">{{ folders|script_json }}</script>
@@ -27,25 +29,7 @@
 <div class="item-layout">
   <section class="preview" aria-label="Vorschau">
     {% if doc.is_pdf %}
-    <div class="preview-frame">
-      <iframe src="{{ file_url }}#view=FitH&amp;navpanes=0" data-preview-frame data-src="{{ file_url }}" title="Vorschau von „{{ doc.title }}“" loading="lazy"></iframe>
-    </div>
-    <a class="preview-first" href="{{ file_url }}" target="_blank" rel="noopener">
-      <img src="{{ page_url }}/1.png?w=700&amp;v={{ page_version }}" srcset="{{ page_url }}/1.png?w=700&amp;v={{ page_version }} 1x, {{ page_url }}/1.png?w=1400&amp;v={{ page_version }} 2x"
-           alt="Seite 1 von „{{ doc.title }}“" loading="lazy" decoding="async" width="700" height="990">
-    </a>
-    {% if preview_pages > 1 %}
-    <ol class="page-strip" aria-label="Seiten">
-      {% for n in range(1, preview_pages + 1) %}
-      <li>
-        <a class="page-thumb{% if n == 1 %} is-current{% endif %}" href="{{ page_url }}/{{ n }}.png?w=1400&amp;v={{ page_version }}" target="_blank" rel="noopener" data-page="{{ n }}" aria-label="Seite {{ n }}">
-          <img src="{{ page_url }}/{{ n }}.png?w=120&amp;v={{ page_version }}" srcset="{{ page_url }}/{{ n }}.png?w=120&amp;v={{ page_version }} 1x, {{ page_url }}/{{ n }}.png?w=240&amp;v={{ page_version }} 2x" alt="" loading="lazy" decoding="async" width="120" height="170">
-          <span class="page-number">{{ n }}</span>
-        </a>
-      </li>
-      {% endfor %}
-    </ol>
-    {% endif %}
+    {{ v.viewer(file_url, page_url, preview_pages, doc.page_count or preview_pages, doc.title, download_name=doc.filename, version=page_version) }}
     {% elif is_image %}
     <div class="preview-image"><img src="{{ file_url }}" alt="{{ doc.title }}" loading="lazy"></div>
     {% else %}
@@ -54,10 +38,12 @@
       <p>Für <strong>{{ doc.ext|replace('.', '')|upper or 'diese Datei' }}</strong> gibt es keine Vorschau.</p>
     </div>
     {% endif %}
+    {% if not doc.is_pdf %}
     <p class="preview-links">
       <a class="btn btn-ghost btn-small" href="{{ file_url }}?download=1" download="{{ doc.filename }}">{{ icon('download') }} Herunterladen</a>
-      {% if doc.is_pdf %}<a class="btn btn-ghost btn-small" href="{{ file_url }}" target="_blank" rel="noopener">{{ icon('external') }} In neuem Tab öffnen</a>{% endif %}
+      {% if is_image %}<a class="btn btn-ghost btn-small" href="{{ file_url }}" target="_blank" rel="noopener">{{ icon('external') }} In neuem Tab öffnen</a>{% endif %}
     </p>
+    {% endif %}
   </section>
 
   <div class="item-side">

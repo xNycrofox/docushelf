@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from ..config import ImapConfig
 from ..errors import DocuShelfError
 from ..util.timeutil import now_iso
+from .origin import mark as mark_origin
 from .mailparse import extract_documents, looks_forwarded, mail_key, parse_message, sender_allowed, sender_of
 from .sendung import write_sendung
 
@@ -297,6 +298,8 @@ class ImapFetcher:
             self._stop.clear()
             self._wakeup.clear()
             name = f"imap-fetcher-{self.household_id}" if self._label else "imap-fetcher"
+            if self.config.name:
+                name = f"{name}-{self.config.name}"
             self._thread = threading.Thread(target=self._run, name=name, daemon=True)
             self._thread.start()
 
@@ -333,6 +336,7 @@ class ImapFetcher:
         return {
             "running": self.running,
             "household": self.household_id,
+            "name": self.config.name,
             "host": self.config.host,
             "folder": self.config.folder,
             "last_run": self.last_run,
@@ -628,6 +632,9 @@ class ImapFetcher:
                 return False
             documents, context = extract_documents(message, min_image_bytes=self.min_image_bytes)
             context["forwarded_by_owner"] = self._forwarded_by_owner(address, message, context)
+            if self.config.owner:
+                # A mailbox of one member: the documents are theirs.
+                mark_origin(context, owner=self.config.owner, endpoint=f"Postfach „{self.config.name or self.config.username}“")
         except (imaplib.IMAP4.error, OSError):
             raise
         except Exception:
@@ -674,6 +681,52 @@ class ImapFetcher:
             intake.trigger()
         except Exception:
             log.debug("cannot wake the intake", exc_info=True)
+
+
+@dataclass
+class ImapProbe:
+    """Result of a connection test (``message`` is German, for the web interface)."""
+
+    ok: bool
+    message: str
+    messages: int | None = None
+
+
+def probe_connection(config: ImapConfig, *, connection_factory: ConnectionFactory | None = None) -> ImapProbe:
+    """Log in, open the configured folder read-only and log out again.
+
+    Nothing in the mailbox is changed: no folders are created and no mail is
+    moved. Never raises; errors are described in German.
+    """
+    from types import SimpleNamespace
+
+    fetcher = ImapFetcher(
+        SimpleNamespace(household=None, settings=None), config=config, connection_factory=connection_factory
+    )
+    try:
+        session = fetcher._open()
+    except Exception as exc:
+        return ImapProbe(False, describe_error(exc))
+    try:
+        resolved = session.resolve(config.folder)
+        typ, data = session.conn.select(quote_mailbox(resolved), readonly=True)
+        if typ != "OK":
+            return ImapProbe(
+                False,
+                f"Anmeldung klappt, aber der Ordner „{config.folder}“ lässt sich nicht öffnen: {_response_text(data)}",
+            )
+        count: int | None = None
+        text = _response_text(data)
+        if text.split() and text.split()[0].isdigit():
+            count = int(text.split()[0])
+        found = f" mit {count} Nachricht{'' if count == 1 else 'en'}" if count is not None else ""
+        return ImapProbe(
+            True, f"Verbindung klappt: angemeldet als {config.username}, Ordner „{config.folder}“{found}.", count
+        )
+    except Exception as exc:
+        return ImapProbe(False, describe_error(exc))
+    finally:
+        fetcher._close(session.conn)
 
 
 def describe_error(exc: BaseException) -> str:

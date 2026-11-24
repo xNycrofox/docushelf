@@ -57,6 +57,12 @@ class Services:
 
         configure_ocr_slots(settings.ocr_parallel)
         self.layout = Layout.from_settings(settings)
+        # The inbound channels: config/channels.yaml if the household has one, else the
+        # settings as given. The manager may change ``self.settings`` (sources, IMAP) later on.
+        from .channels.manager import ChannelManager
+
+        self.channels: ChannelManager = ChannelManager(self, settings)
+        settings = self.settings = self.channels.effective_settings()
         self.layout.ensure(tuple(s.name for s in settings.sources if s.path is None))
         self.index = Index(self.layout.db_path)
         self.needs_full_scan = self.index.init_schema()
@@ -91,12 +97,10 @@ class Services:
         self.intake: Intake = Intake(self)
         self.watcher: ArchiveWatcher = ArchiveWatcher(self)
 
+        # The first IMAP fetcher; all of them live in ``channels.fetchers`` (one per mailbox).
         self.imap: ImapFetcher | None = None
         self.smtp: SmtpReceiver | None = None
-        if settings.imap:
-            from .channels.imap import ImapFetcher
-
-            self.imap = ImapFetcher(self)
+        self.channels.build()
         if settings.smtp:
             from .channels.smtp import SmtpReceiver
 
@@ -135,8 +139,7 @@ class Services:
         self.intake.start()
         # The watcher runs the initial full scan in its own thread.
         self.watcher.start()
-        if self.imap:
-            self.imap.start()
+        self.channels.start()
         if self.smtp:
             self.smtp.start()
         log.info("DocuShelf services started%s", self._label())
@@ -145,7 +148,7 @@ class Services:
         if not self._started:
             return
         self._started = False
-        for component in (self.smtp, self.imap, self.watcher, self.intake, self.worker):
+        for component in (self.smtp, self.channels, self.watcher, self.intake, self.worker):
             if component is None:
                 continue
             try:

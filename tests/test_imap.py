@@ -861,3 +861,49 @@ def test_batches_are_taken_over_by_the_real_intake(services, mail, tmp_path):
     assert item.context["forwarded_by_owner"] is True
     assert item.context["mail_subject"] == "WG: Ihre Rechnung"
     assert list(services.layout.source_dir("mail").iterdir()) == []
+
+
+# -- mailboxes of one person and the connection test ---------------------------------------
+
+
+def test_mailbox_of_a_person_puts_the_owner_into_the_context(make_services, mail):
+    services = make_services(name="erika", owner="erika@example.org")
+    server = FakeImapServer()
+    server.deliver(mail())
+    ImapFetcher(services, connection_factory=server.connect).fetch_once()
+    [batch] = batches(services)
+    assert batch.context["owner"] == "erika@example.org"
+    assert batch.context["endpoint"] == "Postfach „erika“"
+
+
+def test_mailbox_without_owner_adds_nothing(services, mail):
+    server = FakeImapServer()
+    server.deliver(mail())
+    ImapFetcher(services, connection_factory=server.connect).fetch_once()
+    [batch] = batches(services)
+    assert "owner" not in batch.context and "endpoint" not in batch.context
+
+
+def test_probe_connection_changes_nothing(mail):
+    from docushelf.channels.imap import probe_connection
+
+    server = FakeImapServer()
+    server.deliver(mail())
+    config = ImapConfig(host="imap.example.org", username="docs@example.org", password="secret")
+    result = probe_connection(config, connection_factory=server.connect)
+    assert result.ok and result.messages == 1
+    assert "Verbindung klappt" in result.message and "„INBOX“ mit 1 Nachricht" in result.message
+    assert set(server.folders) == {"INBOX"} and len(server.folders["INBOX"]) == 1
+    assert not [c for c in server.commands if c[0] in ("MOVE", "COPY", "STORE")]
+
+    wrong = probe_connection(replace_password(config, "falsch"), connection_factory=server.connect)
+    assert not wrong.ok and "Anmeldung am IMAP-Server fehlgeschlagen" in wrong.message
+    server.fail_next_connects = 1
+    down = probe_connection(config, connection_factory=server.connect)
+    assert not down.ok and "nicht erreichbar" in down.message
+
+
+def replace_password(config, password):
+    from dataclasses import replace
+
+    return replace(config, password=password)

@@ -1,0 +1,27 @@
+/* Page "Eingangskanäle" (templates/channels.html); builds on app.css. */
+
+.channel-stack { display: grid; gap: 18px; }
+.channel-source { margin-bottom: 14px; }
+
+.channel-item {
+  display: grid; gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface);
+}
+.channel-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.channel-item-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.channel-item-title h3 { font-size: 1rem; }
+.channel-item-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.channel-toggle { display: inline-flex; }
+.channel-row-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+
+.channel-add { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) auto; gap: 12px; align-items: end; }
+.channel-form { min-width: min(100%, 640px); }
+.channel-senders { min-height: 64px; }
+.channel-setup .kv dd { overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .channel-add { grid-template-columns: 1fr; }
+  .channel-add .btn { width: 100%; }
+}

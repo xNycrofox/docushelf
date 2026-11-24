@@ -26,9 +26,17 @@ tokens and channels, and its own :class:`~docushelf.services.Services`::
 
 An optional top-level ``admins: [name, ...]`` lists the accounts (user name or
 verified e-mail address, like ``users``) that may manage the ``users`` of every
-household in the web interface; ``DOCUSHELF_ADMIN_USERS`` adds more, and the
-local emergency account always may. Such a change is written back to the file
+household in the web interface, and ``admin_groups: [group, ...]`` the OIDC
+groups whose members may do so as well; ``DOCUSHELF_ADMIN_USERS`` and
+``DOCUSHELF_ADMIN_GROUPS`` add more, and the local emergency account always
+may. Such a change is written back to the file
 (:meth:`Registry.change_members`) and takes effect at once.
+
+``imap``, ``smtp_recipients`` and ``watch_folders`` are defaults: once a
+household saves its channels in the web interface
+(``<household>/config/channels.yaml``, see :mod:`docushelf.channels.manager`),
+that file decides for it, including which recipient addresses
+:meth:`Registry.by_smtp_recipient` routes to it.
 
 The file is validated strictly: unknown keys are errors, because a typo in
 ``groups`` must never silently change who has access. Secrets (IMAP
@@ -76,7 +84,7 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 MAX_MEMBER_LENGTH = 200
 BACKUP_SUFFIX = ".bak"
 
-_TOP_KEYS = ("households", "admins")
+_TOP_KEYS = ("households", "admins", "admin_groups")
 
 _HOUSEHOLD_KEYS = (
     "id",
@@ -181,14 +189,16 @@ def load_households(settings: Settings, *, env: Mapping[str, str] | None = None)
     return _load(settings, env)[0]
 
 
-def _load(settings: Settings, env: Mapping[str, str] | None) -> tuple[list[Household], tuple[str, ...]]:
-    """The households and the configured admins (casefolded) of ``households.yaml``."""
+def _load(
+    settings: Settings, env: Mapping[str, str] | None
+) -> tuple[list[Household], tuple[str, ...], tuple[str, ...]]:
+    """The households, admins and admin groups (both casefolded) of ``households.yaml``."""
     path = households_file(settings)
     if not path.is_file():
-        return [default_household(settings)], ()
+        return [default_household(settings)], (), ()
     raw = _parse_yaml(_read_text(path))
     households = parse_households(raw, settings, env=os.environ if env is None else env)
-    return households, parse_admins(raw)
+    return households, parse_admins(raw), parse_admin_groups(raw)
 
 
 def _read_text(path: Path) -> str:
@@ -212,6 +222,14 @@ def parse_admins(raw: Any) -> tuple[str, ...]:
     return tuple(name.casefold() for name in _strings(raw.get("admins"), f"{HOUSEHOLDS_FILE}: admins"))
 
 
+def parse_admin_groups(raw: Any) -> tuple[str, ...]:
+    """The ``admin_groups`` of ``households.yaml`` (casefolded; empty without the entry)."""
+    if not isinstance(raw, dict):
+        return ()
+    groups = _strings(raw.get("admin_groups"), f"{HOUSEHOLDS_FILE}: admin_groups")
+    return tuple(dict.fromkeys(group.casefold() for group in groups))
+
+
 def parse_households(raw: Any, settings: Settings, *, env: Mapping[str, str]) -> list[Household]:
     """Validate the content of ``households.yaml`` (already parsed YAML)."""
     if not isinstance(raw, dict):
@@ -219,9 +237,11 @@ def parse_households(raw: Any, settings: Settings, *, env: Mapping[str, str]) ->
     unknown = [str(key) for key in raw if key not in _TOP_KEYS]
     if unknown:
         raise ConfigError(
-            f"{HOUSEHOLDS_FILE}: unbekannter Eintrag „{unknown[0]}“ – erlaubt sind nur „households:“ und „admins:“."
+            f"{HOUSEHOLDS_FILE}: unbekannter Eintrag „{unknown[0]}“ – erlaubt sind nur „households:“, "
+            "„admins:“ und „admin_groups:“."
         )
     parse_admins(raw)
+    parse_admin_groups(raw)
     entries = raw.get("households")
     if not isinstance(entries, list) or not entries:
         raise ConfigError(f"{HOUSEHOLDS_FILE}: „households:“ muss eine Liste mit mindestens einem Haushalt sein.")
@@ -633,6 +653,11 @@ def _user_matches(household: Household, user: Any) -> bool:
     return any(str(group).strip().casefold() in groups for group in getattr(user, "groups", None) or ())
 
 
+def _casefolded(values: Any) -> set[str]:
+    """Trimmed, casefolded, non-empty texts of ``values`` (None: none)."""
+    return {str(value).strip().casefold() for value in values or () if str(value).strip()}
+
+
 def clean_member(value: Any) -> str:
     """A user name or e-mail address entered as a household member (trimmed), or ConfigError."""
     text = value.strip() if isinstance(value, str) else ""
@@ -691,10 +716,11 @@ class Registry:
         self.settings = settings
         self.configured = configured(settings)
         self._env = env
-        households, admins = _load(settings, env)
+        households, admins, admin_groups = _load(settings, env)
         self.households: list[Household] = households
-        # Admins named in households.yaml (casefolded); see is_admin().
+        # Admins and admin groups named in households.yaml (casefolded); see is_admin().
         self.admins: tuple[str, ...] = admins
+        self.admin_groups: tuple[str, ...] = admin_groups
         self.default: Household | None = None if self.configured else self.households[0]
         self._index(self.households)
         self._factory = services_factory or _default_services_factory
@@ -743,7 +769,46 @@ class Registry:
                     except AttributeError:
                         pass
                 self._services[household.id] = services
+                self._attach_channels(household, services)
             return services
+
+    def _attach_channels(self, household: Household, services: Any) -> None:
+        """Hook the household's channel manager (``services.channels``) into the registry."""
+        channels = getattr(services, "channels", None)
+        if channels is None or not hasattr(channels, "listeners"):
+            return
+        channels.listeners.append(lambda: self._channels_changed(household.id))
+        smtp = self.settings.smtp
+        if self.multi and smtp is not None and smtp.recipient and hasattr(channels, "adopt_global_recipient"):
+            root = _resolved(Path(self.settings.data_dir))
+            if _resolved(Path(household.path)) == root or len(self.households) == 1:
+                # The global DOCUSHELF_SMTP_RECIPIENT belongs to the household in the data root.
+                channels.adopt_global_recipient(smtp.recipient)
+
+    def _channels_changed(self, household_id: str) -> None:
+        """A household changed its channels in the web interface (watch folders, addresses)."""
+        if not self.multi:
+            return
+        with self._lock:
+            if not self._started:
+                return
+            from .inbox.intake import protect_households
+
+            try:
+                protect_households(self)
+            except Exception:
+                log.exception("cannot update the watch folder protection after a change of household %s", household_id)
+
+    def channels(self, household_id: str) -> Any:
+        """The channel manager of a household whose services exist (None otherwise)."""
+        with self._lock:
+            services = self._services.get(household_id)
+        return getattr(services, "channels", None) if services is not None else None
+
+    def uses_channel_file(self, household_id: str) -> bool:
+        """Whether the household's channels come from its ``channels.yaml`` (web interface)."""
+        channels = self.channels(household_id)
+        return bool(getattr(channels, "from_file", False))
 
     def created(self) -> list[Any]:
         """The service containers created so far (in household order)."""
@@ -777,7 +842,11 @@ class Registry:
 
         Admins are the local emergency account, the ``admins`` of
         ``households.yaml`` and ``DOCUSHELF_ADMIN_USERS`` (user name or e-mail
-        address, case-insensitive). API tokens never are.
+        address, case-insensitive), and every SSO account with a group from
+        ``admin_groups`` or ``DOCUSHELF_ADMIN_GROUPS`` (case-insensitive; the
+        groups are those of the login, so a change applies at the next login).
+        API tokens never are. Being an admin does not grant access to any
+        household: the settings page still needs one the user belongs to.
         """
         if user is None or not self.multi:
             return False
@@ -786,10 +855,15 @@ class Registry:
             return True
         if method != "oidc":
             return False
-        names = set(self.admins) | {str(n).strip().casefold() for n in self.settings.admin_users or () if str(n).strip()}
+        names = set(self.admins) | _casefolded(getattr(self.settings, "admin_users", ()))
         username = str(getattr(user, "username", "") or "").strip().casefold()
         email = str(getattr(user, "email", "") or "").strip().casefold()
-        return bool((username and username in names) or (email and email in names))
+        if (username and username in names) or (email and email in names):
+            return True
+        groups = set(self.admin_groups) | _casefolded(getattr(self.settings, "admin_groups", ()))
+        if not groups:
+            return False
+        return any(str(group).strip().casefold() in groups for group in getattr(user, "groups", None) or ())
 
     def by_smtp_recipient(self, address: str) -> Household | None:
         """The household mail to ``address`` belongs to (None: unknown address).
@@ -801,7 +875,18 @@ class Registry:
         normalized = normalize_address(address)
         if not normalized:
             return None
-        return self._recipients.get(normalized)
+        # A household with a channel manager decides itself (channels.yaml wins over households.yaml).
+        for household in self.households:
+            channels = self.channels(household.id)
+            route = getattr(channels, "smtp_route", None)
+            if route is None:
+                continue
+            if route(normalized) is not None:
+                return household
+        household = self._recipients.get(normalized)
+        if household is not None and getattr(self.channels(household.id), "smtp_route", None) is not None:
+            return None  # the household's manager did not accept it above
+        return household
 
     # -- membership ---------------------------------------------------------------------
     def change_members(self, household_id: str, *, add: str | None = None, remove: str | None = None) -> Household:
@@ -859,6 +944,7 @@ class Registry:
             new_raw = _parse_yaml(new_text)
             households = parse_households(new_raw, self.settings, env=env)
             admins = parse_admins(new_raw)
+            admin_groups = parse_admin_groups(new_raw)
             if [h.id for h in households] != [h.id for h in self.households]:
                 raise ConfigError(
                     f"In {HOUSEHOLDS_FILE} wurden inzwischen Haushalte hinzugefügt, entfernt oder umsortiert. "
@@ -874,14 +960,16 @@ class Registry:
                 raise ConfigError(
                     f"{HOUSEHOLDS_FILE} konnte nicht gespeichert werden: {exc.strerror or exc}"
                 ) from exc
-            self._apply_members(households, admins)
+            self._apply_members(households, admins, admin_groups)
             changed = self.get(household.id)
         log.info(
             "household %s: user %s %s", household.id, "added" if add is not None else "removed", name
         )
         return changed
 
-    def _apply_members(self, households: Sequence[Household], admins: tuple[str, ...]) -> None:
+    def _apply_members(
+        self, households: Sequence[Household], admins: tuple[str, ...], admin_groups: tuple[str, ...] = ()
+    ) -> None:
         """Take groups and users from freshly loaded households; everything else stays as started."""
         fresh = {household.id: household for household in households}
         updated = [
@@ -891,6 +979,7 @@ class Registry:
         self._index(updated)
         self.households = updated
         self.admins = admins
+        self.admin_groups = admin_groups
         for household in updated:
             services = self._services.get(household.id)
             if services is not None and getattr(services, "household", None) is not None:

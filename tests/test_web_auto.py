@@ -481,7 +481,8 @@ def test_encrypted_item_gets_one_placeholder_page(client, svc, samples, tmp_path
     # Signed PDFs (and encrypted ones whose pages could be counted) keep the normal preview.
     item.page_count = 2
     svc.inbox.save(item)
-    assert "<iframe" in page(client, f"/eingang/{item.id}")
+    html = page(client, f"/eingang/{item.id}")
+    assert "data-viewer" in html and "<iframe" not in html
 
 
 def test_rules_page_explains_the_sender_condition_and_the_backup(client, svc):

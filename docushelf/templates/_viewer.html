@@ -1,0 +1,44 @@
+{#
+  The embedded document viewer: all pages as sheets in one scrolling area.
+
+  Without JavaScript (and whenever PDF.js cannot open the file, e.g. a password
+  protected PDF) the rendered page images are shown; viewer.js replaces them with
+  PDF.js pages that have a selectable text layer when the vendored build is present.
+#}
+{% macro viewer(src, pages_url, page_count, total_pages, title, download_name='', version='') -%}
+{%- set suffix = '&v=' ~ version if version else '' -%}
+{#- Page count unknown: page 1 exists in every PDF. -#}
+{%- set page_count = page_count or 1 -%}
+{%- set pdfjs = static_url('vendor/pdfjs/pdf.min.mjs') -%}
+{%- set has_pdfjs = '?v=' in pdfjs -%}
+<div class="viewer" data-viewer data-src="{{ src }}" data-pages="{{ pages_url }}" data-page-count="{{ page_count }}" data-version="{{ version }}" data-title="{{ title }}"
+     {%- if has_pdfjs %} data-pdfjs="{{ pdfjs }}" data-pdfjs-worker="{{ static_url('vendor/pdfjs/pdf.worker.min.mjs') }}" data-pdfjs-wasm="/static/vendor/pdfjs/wasm/"{% endif %}>
+  <div class="viewer-bar" role="toolbar" aria-label="Vorschau">
+    <div class="viewer-zoom" data-viewer-zoom hidden>
+      <button class="btn btn-ghost btn-icon viewer-btn" type="button" data-zoom="out" aria-label="Verkleinern" title="Verkleinern (−)"><span aria-hidden="true">−</span></button>
+      <button class="btn btn-ghost btn-small viewer-scale" type="button" data-zoom="fit" title="Auf Breite einpassen (0)"><span data-zoom-label>Breite</span></button>
+      <button class="btn btn-ghost btn-icon viewer-btn" type="button" data-zoom="in" aria-label="Vergrößern" title="Vergrößern (+)"><span aria-hidden="true">+</span></button>
+    </div>
+    <span class="viewer-count" data-viewer-count>{% if total_pages %}{{ plural(total_pages, 'Seite', 'Seiten') }}{% endif %}</span>
+    <span class="viewer-actions">
+      <a class="btn btn-ghost btn-small" href="{{ src }}?download=1" download="{{ download_name }}" title="Herunterladen">{{ icon('download') }}<span class="viewer-action-label">Herunterladen</span></a>
+      <a class="btn btn-ghost btn-small" href="{{ src }}" target="_blank" rel="noopener" title="In neuem Tab öffnen">{{ icon('external') }}<span class="viewer-action-label">In neuem Tab öffnen</span></a>
+    </span>
+  </div>
+  <div class="viewer-scroll" data-viewer-scroll tabindex="0" aria-label="Seiten von „{{ title }}“">
+    <ol class="viewer-pages" data-viewer-pages>
+      {% for n in range(1, page_count + 1) %}
+      <li class="viewer-page" data-page="{{ n }}">
+        <img src="{{ pages_url }}/{{ n }}.png?w=1400{{ suffix }}"
+             srcset="{{ pages_url }}/{{ n }}.png?w=700{{ suffix }} 700w, {{ pages_url }}/{{ n }}.png?w=1400{{ suffix }} 1400w, {{ pages_url }}/{{ n }}.png?w=2000{{ suffix }} 2000w"
+             sizes="(max-width: 1100px) 100vw, 60vw" alt="Seite {{ n }} von „{{ title }}“" loading="lazy" decoding="async" width="700" height="990">
+      </li>
+      {% endfor %}
+    </ol>
+    {% if (total_pages or 0) > page_count %}
+    <p class="viewer-more" data-viewer-more>Die Vorschau zeigt die ersten {{ page_count }} von {{ total_pages }} Seiten. <a href="{{ src }}" target="_blank" rel="noopener">Ganzes Dokument öffnen</a></p>
+    {% endif %}
+  </div>
+</div>
+<script type="module" src="{{ static_url('viewer.js') }}"></script>
+{%- endmacro %}

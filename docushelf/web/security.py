@@ -29,8 +29,10 @@ belongs to the household whose ``tokens.yaml`` holds it; a browser session
 uses ``session["household"]`` while the user still belongs to it, otherwise
 the first household the user belongs to. Membership comes from the groups and
 users of each household; the local emergency account may use every household.
-Admins (:func:`is_household_admin`) may change the users of every household
-in the web interface; such a change applies from the next request on.
+Admins (:func:`is_household_admin`: named accounts or members of an admin
+group) may change the users of every household in the web interface; such a
+change applies from the next request on. Being an admin grants no household:
+an admin who belongs to none is treated like anybody without a household.
 A logged-in user without any household gets 403 (:class:`NoHousehold`). With
 a single household nothing of this applies and everything works as before.
 """
@@ -416,6 +418,30 @@ def is_household_admin(request: Request, user: User | None) -> bool:
     except Exception:
         log.exception("cannot determine whether %s is an admin", user.username)
         return False
+
+
+def is_channel_admin(request: Request, user: User | None) -> bool:
+    """Whether ``user`` may manage the inbound channels (browser login only).
+
+    With several households these are the household admins
+    (:func:`is_household_admin`). With a single household: the local emergency
+    account and the SSO accounts named in ``DOCUSHELF_ADMIN_USERS`` or members
+    of a group in ``DOCUSHELF_ADMIN_GROUPS``.
+    """
+    if user is None or user.method not in ("local", "oidc"):
+        return False
+    if multi_household(request):
+        return is_household_admin(request, user)
+    if user.method == "local":
+        return True
+    settings = get_settings(request)
+    names = {str(n).strip().casefold() for n in getattr(settings, "admin_users", ()) or () if str(n).strip()}
+    username = (user.username or "").strip().casefold()
+    email = (user.email or "").strip().casefold()
+    if (username and username in names) or (email and email in names):
+        return True
+    groups = {str(g).strip().casefold() for g in getattr(settings, "admin_groups", ()) or () if str(g).strip()}
+    return any(str(group).strip().casefold() in groups for group in user.groups or ())
 
 
 def _relevant_groups(request: Request, settings: Any) -> set[str]:

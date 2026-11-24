@@ -283,3 +283,43 @@ def test_received_scans_are_taken_over_by_the_real_intake(start_receiver, scan_m
     assert item.source == "smtp"
     assert item.original_files == ["original/scan_0001.pdf"]
     assert item.context["forwarded_by_owner"] is True
+
+
+# -- addresses of one person (channel settings) ------------------------------------------------
+
+
+class FakeChannels:
+    """The part of the channel manager the receiver uses."""
+
+    def __init__(self, addresses):
+        from docushelf.channels.store import Recipient
+
+        self.recipients = {address: Recipient(address, owner) for address, owner in addresses.items()}
+
+    def smtp_route(self, address):
+        return self.recipients.get(address)
+
+    def mark_smtp(self, context, address):
+        from docushelf.channels import origin
+
+        recipient = self.smtp_route(address)
+        if recipient is not None and recipient.owner:
+            origin.mark(context, owner=recipient.owner, endpoint="Scan per Mail")
+
+
+def test_per_person_addresses_route_and_mark_the_owner(start_receiver, scan_mail, base_services):
+    base_services.channels = FakeChannels({RECIPIENT: None, "scan-erika@docushelf.local": "erika"})
+    receiver = start_receiver()
+    assert receiver.recipient_allowed("Scan-Erika@docushelf.local")
+    assert not receiver.recipient_allowed("scan-max@docushelf.local")
+    with client(receiver) as smtp:
+        smtp.sendmail("scanner@printer.local", ["scan-erika@docushelf.local"], scan_mail())
+        smtp.sendmail("scanner@printer.local", [RECIPIENT], scan_mail())
+    owners = sorted(str(b.context.get("owner")) for b in batches(base_services))
+    assert owners == ["None", "erika"]
+
+
+def test_channel_settings_can_refuse_the_configured_recipient(start_receiver, base_services):
+    base_services.channels = FakeChannels({})
+    receiver = start_receiver()
+    assert not receiver.recipient_allowed(RECIPIENT)

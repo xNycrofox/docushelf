@@ -563,9 +563,9 @@ def test_inbox_ready_detail(client, svc, samples, tmp_path):
     svc.inbox.log(item, "Analyse fertig")
 
     html = get_page(client, f"/eingang/{item.id}")
-    assert f'src="/api/v1/inbox/{item.id}/document#view=FitH&amp;navpanes=0"' in html
-    assert f'/api/v1/inbox/{item.id}/pages/1.png?w=700' in html  # page image for phones
-    assert f"/api/v1/inbox/{item.id}/pages/3.png?w=120" in html  # page strip
+    assert "<iframe" not in html and 'data-viewer data-src="/api/v1/inbox/' + item.id + '/document"' in html
+    assert f'/api/v1/inbox/{item.id}/pages/1.png?w=1400' in html  # page images until PDF.js takes over
+    assert f"/api/v1/inbox/{item.id}/pages/3.png?w=700" in html  # every page, not just the first
     assert f'action="/eingang/{item.id}/ablegen"' in html and 'value="Wohnung/Strom"' in html
     assert 'value="Stromrechnung Januar"' in html and 'value="2026-01-15"' in html and 'value="Strom"' in html
     assert "2026-01-15 Stromrechnung Januar.pdf" in html  # file name preview
@@ -788,8 +788,14 @@ def test_archive_sorting_and_missing_folders(client, archive, svc, samples):
     add_archive_pdf(svc, samples, "Finanzen/Bank/2025-01-31 Kontoauszug Januar.pdf", text="Januar")
     html = get_page(client, "/archiv/Finanzen/Bank?sort=date_asc")
     assert html.index("Kontoauszug Januar") < html.index("Kontoauszug März")
+    html = get_page(client, "/archiv/Finanzen/Bank?sort=date_desc")
+    assert html.index("Kontoauszug März") < html.index("Kontoauszug Januar")
+    # Unknown values keep the remembered choice; without one the order is by name.
     html = get_page(client, "/archiv/Finanzen/Bank?sort=unsinn")
     assert html.index("Kontoauszug März") < html.index("Kontoauszug Januar")
+    client.cookies.delete(views.SORT_COOKIE)
+    html = get_page(client, "/archiv/Finanzen/Bank?sort=unsinn")
+    assert html.index("Kontoauszug Januar") < html.index("Kontoauszug März")
     assert client.get("/archiv/Gibt/Es/Nicht").status_code == 404
     assert client.get("/archiv/Finanzen/%2E%2E/%2E%2E").status_code == 404
     assert client.get("/archiv/.versteckt").status_code == 404
@@ -822,7 +828,7 @@ def test_folder_actions(client, svc, archive):
 def test_document_page(client, svc, archive):
     html = get_page(client, f"/dokument/{archive.bank.id}")
     assert "Kontoauszug März" in html and "12.03.2025" in html
-    assert f'src="/api/v1/documents/{archive.bank.id}/file#view=FitH&amp;navpanes=0"' in html
+    assert "<iframe" not in html and f'data-viewer data-src="/api/v1/documents/{archive.bank.id}/file"' in html
     assert f"/api/v1/documents/{archive.bank.id}/pages/1.png?w=700&amp;v={archive.bank.content_hash[:12]}" in html
     assert f'action="/dokument/{archive.bank.id}/bearbeiten"' in html and f'action="/dokument/{archive.bank.id}/loeschen"' in html
     assert "Technische Details" in html and "Finanzen/Bank/2025-03-12 Kontoauszug März.pdf" in html

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
+{% block body_class %}layout-wide{% endblock %}
 {% block title %}{{ title }} · Eingang{% endblock %}
 {% block head %}{% if item.state == 'arbeit' %}<noscript><meta http-equiv="refresh" content="5"></noscript>{% endif %}{% endblock %}
 {% block content %}
@@ -18,6 +19,7 @@
   <h1 class="item-title">{{ title }}</h1>
   <p class="item-meta">
     {{ m.source_badge(item.source) }}
+    {% with origin_context=item.context %}{% include "_channel_origin.html" %}{% endwith %}
     <span>eingegangen {{ m.time_tag(item.received_at) }}</span>
     {% if item.page_count %}<span>{{ plural(item.page_count, 'Seite', 'Seiten') }}</span>{% endif %}
   </p>

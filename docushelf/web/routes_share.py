@@ -18,6 +18,13 @@ appears in the system share sheet. The browser then posts the shared files to
 ``GET /manifest.webmanifest`` and ``GET /sw.js`` (registered in ``web/app.py``)
 need no login: browsers fetch the manifest without cookies, and neither file
 contains anything private.
+
+iPhone and iPad have no share target for web apps; they use the shortcut
+"DocuShelf senden". ``GET /kurzbefehl`` hands it out without anybody needing a
+Mac: the operator signs it once and puts the file into
+``<data>/config/shortcuts/`` or sets ``DOCUSHELF_IOS_SHORTCUT_URL`` to an
+iCloud link of it. ``POST /kurzbefehl/token`` creates an API token for the
+logged-in user in one click; the settings page shows it once.
 """
 
 from __future__ import annotations
@@ -29,7 +36,7 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
@@ -37,7 +44,8 @@ from starlette.datastructures import UploadFile
 from ..errors import DocuShelfError
 from . import auth
 from .routes_api import MAX_UPLOAD_FILES, store_upload
-from .security import User, current_user, get_services, get_settings, login_url
+from . import security
+from .security import User, current_user, get_services, get_settings, login_url, require_user, verify_csrf
 
 log = logging.getLogger(__name__)
 
@@ -291,3 +299,119 @@ async def share_post(request: Request) -> Response:
         link_label="Zum Eingang",
     )
     return RedirectResponse(SHARE_PATH, status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# iPhone shortcut
+
+SHORTCUT_NAME = "DocuShelf senden.shortcut"
+SHORTCUT_PATH = "/kurzbefehl"
+PHONE_TOKEN_NAME = "iPhone-Kurzbefehl"
+# The settings page shows a freshly created token once (same key as routes_ui.NEW_TOKEN_KEY).
+NEW_TOKEN_KEY = "_new_token"
+
+require_session_user = getattr(security, "require_session_user", require_user)
+
+
+def shortcut_file(settings: Any) -> Path:
+    """Where the operator puts the signed shortcut: ``<data>/config/shortcuts/DocuShelf senden.shortcut``."""
+    return Path(settings.root_dir) / "config" / "shortcuts" / SHORTCUT_NAME
+
+
+def shortcut_source(settings: Any) -> str | None:
+    """``"file"`` (signed file on the server), ``"url"`` (iCloud link) or None (not offered)."""
+    if settings is None:
+        return None
+    try:
+        if shortcut_file(settings).is_file():
+            return "file"
+    except OSError:
+        pass
+    return "url" if getattr(settings, "ios_shortcut_url", None) else None
+
+
+def _shortcut_offered(request: Any) -> str | None:
+    """Template helper: is a shortcut available for the button in "Handy & Tablet"?"""
+    try:
+        return shortcut_source(get_settings(request))
+    except Exception:
+        log.debug("cannot determine the shortcut source", exc_info=True)
+        return None
+
+
+def _register_template_helpers() -> None:
+    try:
+        from .templating import environment
+    except ImportError:  # pragma: no cover - the web interface is not installed
+        return
+    environment.globals.setdefault("ios_shortcut", _shortcut_offered)
+
+
+_register_template_helpers()
+
+
+@router.get(SHORTCUT_PATH)
+def shortcut_download(request: Request, user: User = Depends(require_user)) -> Response:
+    """The shortcut "DocuShelf senden": the signed file, or a redirect to its iCloud link."""
+    settings = get_settings(request)
+    source = shortcut_source(settings)
+    if source == "file":
+        return FileResponse(
+            shortcut_file(settings),
+            media_type="application/octet-stream",
+            filename=SHORTCUT_NAME,
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
+    if source == "url":
+        return RedirectResponse(settings.ios_shortcut_url, status_code=303)
+    message = (
+        "Der Kurzbefehl ist auf diesem Server noch nicht hinterlegt. Wer DocuShelf betreibt, legt die signierte "
+        f"Datei als config/shortcuts/{SHORTCUT_NAME} ab oder trägt einen iCloud-Link in "
+        "DOCUSHELF_IOS_SHORTCUT_URL ein (Anleitung: contrib/ios/README.md)."
+    )
+    if security.wants_json(request):
+        raise HTTPException(status_code=404, detail=message)
+    from .templating import render
+
+    return render(
+        request,
+        "error.html",
+        {"user": user, "status_code": 404, "title": "Kurzbefehl nicht verfügbar", "message": message},
+        status_code=404,
+    )
+
+
+@router.post(SHORTCUT_PATH + "/token")
+async def shortcut_token(
+    request: Request, user: User = Depends(require_session_user), _csrf: Any = Depends(verify_csrf)
+) -> Response:
+    """Create an API token for this phone; the settings page shows it once (section "Handy & Tablet")."""
+    return await run_in_threadpool(_create_phone_token, request, user)
+
+
+def _create_phone_token(request: Request, user: User) -> Response:
+    back = "/einstellungen#handy"
+    services = get_services(request)
+    store = getattr(services, "tokens", None)
+    if store is None:
+        _flash(request, "API-Tokens sind nicht verfügbar.", "error")
+        return RedirectResponse(back, status_code=303)
+    try:
+        # Tied to the account like every token made in the browser.
+        token, info = store.create(PHONE_TOKEN_NAME, user.username, owner=user)
+    except DocuShelfError as exc:
+        _flash(request, f"Der Token konnte nicht erstellt werden: {exc}", "error")
+        return RedirectResponse(back, status_code=303)
+    from . import views
+
+    info = info if isinstance(info, dict) else {}
+    key = views.one_time.put({"token": token, "name": info.get("name", PHONE_TOKEN_NAME), "phone": True})
+    request.session[NEW_TOKEN_KEY] = key
+    audit = getattr(services, "audit", None)
+    if audit is not None:
+        try:
+            audit.write(user.username, "token_create", token=info.get("id"), name=info.get("name", PHONE_TOKEN_NAME))
+        except Exception:
+            log.exception("cannot write the audit log")
+    _flash(request, "Token für dieses Handy erstellt. Er wird nur dieses eine Mal angezeigt.", "success")
+    return RedirectResponse(back, status_code=303)

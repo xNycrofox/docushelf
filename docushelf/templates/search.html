@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
+{% block body_class %}layout-wide{% endblock %}
 {% block title %}{% if q %}„{{ q }}“ · {% endif %}Suche{% endblock %}
 {% block content %}
 <script type="application/json" id="folders-data">{{ folders|script_json }}</script>

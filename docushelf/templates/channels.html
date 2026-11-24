@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "_channel_macros.html" as ch with context %}
+{% block title %}Eingangskanäle{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ static_url('channels.css') }}">{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <a class="back-link" href="/einstellungen">{{ icon('chevron-left') }} Einstellungen</a>
+    <h1>Eingangskanäle</h1>
+    <p class="page-sub">Wie Dokumente in den Eingang{% if channel_household and multi %} von <strong>{{ channel_household.name }}</strong>{% endif %} kommen: Postfächer, Scan per Mail, Scanner-Ordner und überwachte Ordner. Änderungen gelten sofort – ohne Neustart.</p>
+  </div>
+</div>
+
+{% if from_file %}
+<p class="hint channel-source">Gespeichert in <span class="mono break">{{ store_path }}</span>; die vorige Fassung liegt jeweils als <span class="mono">channels.yaml.bak</span> daneben. Passwörter stehen getrennt in <span class="mono">config/secrets/</span>.</p>
+{% else %}
+<div class="alert alert-info" role="status">
+  {{ icon('info') }}
+  <p>Derzeit gelten die Voreinstellungen aus den Umgebungsvariablen{% if multi %} und <span class="mono">households.yaml</span>{% endif %}. Mit der ersten Änderung hier übernimmt DocuShelf sie in <span class="mono">config/channels.yaml</span> – ab dann gilt für diesen Haushalt nur noch diese Datei.</p>
+</div>
+{% endif %}
+
+{% if members %}
+<datalist id="channel-members">{% for name in members %}<option value="{{ name }}"></option>{% endfor %}</datalist>
+{% endif %}
+
+<div class="channel-stack">
+
+<section class="card" id="upload" aria-labelledby="upload-title">
+  <div class="card-head"><h2 id="upload-title">{{ icon('upload') }} Hochladen</h2>{{ ch.state(true, 'immer an') }}</div>
+  <div class="card-body">
+    <p class="hint">Hochladen im Eingang, Teilen vom Handy und die API funktionieren immer. Wer hochlädt, steht im Protokoll.</p>
+  </div>
+</section>
+
+<section class="card" id="postfaecher" aria-labelledby="imap-title">
+  <div class="card-head"><h2 id="imap-title">{{ icon('mail') }} Mail-Postfächer (IMAP)</h2><span class="count">{{ mailboxes|length }}</span></div>
+  <div class="card-body stack">
+    <p class="hint">DocuShelf holt Mails mit PDF- oder Bild-Anhängen aus einem eigenen Postfach ab und verschiebt sie danach in einen Unterordner – gelöscht wird nie etwas. Gehört ein Postfach einer Person, stehen ihre Dokumente im Eingang mit „von …“.</p>
+    {% for entry in mailboxes %}
+    {%- set box = entry.box %}
+    {%- set key = 'imap:' ~ box.name %}
+    <article class="channel-item" id="postfach-{{ box.name }}">
+      <div class="channel-item-head">
+        <div class="channel-item-title">
+          <h3>{{ box.name }}</h3>
+          <span class="mono muted break">{{ box.user }} · {{ box.host }}:{{ box.port }}</span>
+          {% if box.owner %}<span class="chip chip-quiet">{{ icon('user') }}{{ box.owner }}</span>{% endif %}
+        </div>
+        <div class="channel-item-actions">
+          {% if box.enabled and entry.status %}{{ ch.state(entry.status.running, 'läuft', 'gestoppt') }}{% else %}{{ ch.state(box.enabled) }}{% endif %}
+          {{ ch.toggle('/einstellungen/kanaele/imap/' ~ (box.name|urlpart) ~ '/schalten', box.enabled, 'Postfach ' ~ box.name) }}
+        </div>
+      </div>
+      <dl class="kv kv-compact">
+        <div><dt>Ordner</dt><dd class="mono">{{ box.folder }}</dd></div>
+        <div><dt>Abruf</dt><dd>alle {{ box.poll_seconds }} s · {{ 'SSL/TLS' if box.tls == 'ssl' else 'STARTTLS' }}</dd></div>
+        <div><dt>Passwort</dt><dd>{% if entry.has_password %}gesetzt{% else %}<span class="text-danger">fehlt</span>{% endif %}</dd></div>
+        <div><dt>Erlaubte Absender</dt><dd class="break">{% if entry.senders %}{{ entry.senders }}{% else %}<span class="text-danger">keine – alle Mails werden abgelehnt</span>{% endif %}</dd></div>
+        {% if entry.status %}
+        {% if entry.status.last_success %}<div><dt>Zuletzt abgerufen</dt><dd>{{ m.time_tag(entry.status.last_success) }}{% if entry.status.imported_total %} · {{ entry.status.imported_total }} übernommen{% endif %}</dd></div>{% endif %}
+        {% if entry.status.last_error %}<div><dt>Letzter Fehler</dt><dd class="text-danger break">{{ entry.status.last_error }}</dd></div>{% endif %}
+        {% endif %}
+      </dl>
+      {{ ch.message(key) }}
+      <details class="disclosure"{% if form_section == key %} open{% endif %}>
+        <summary class="btn btn-ghost btn-small">{{ icon('edit') }} Bearbeiten</summary>
+        <div class="disclosure-body">
+          {{ ch.mailbox_form(key, box, entry.has_password, form_values) }}
+        </div>
+      </details>
+      <form method="post" action="/einstellungen/kanaele/imap/{{ box.name|urlpart }}/entfernen" data-confirm="Postfach „{{ box.name }}“ entfernen? DocuShelf ruft es dann nicht mehr ab; das gespeicherte Passwort wird gelöscht. Die Mails im Postfach bleiben, wie sie sind." data-confirm-ok="Entfernen" data-confirm-danger>
+        {{ m.csrf() }}
+        <button class="btn btn-ghost btn-small btn-danger-text" type="submit">{{ icon('trash') }} Entfernen</button>
+      </form>
+    </article>
+    {% else %}
+    <p class="muted">Noch kein Postfach.</p>
+    {% endfor %}
+    {{ ch.message('imap:neu') }}
+    <details class="disclosure"{% if form_section == 'imap:neu' %} open{% endif %}>
+      <summary class="btn">{{ icon('plus') }} Postfach hinzufügen</summary>
+      <div class="disclosure-body">
+        {{ ch.mailbox_form('imap:neu', none, false, form_values) }}
+      </div>
+    </details>
+  </div>
+</section>
+
+<section class="card" id="scan-per-mail" aria-labelledby="smtp-title">
+  <div class="card-head"><h2 id="smtp-title">{{ icon('printer') }} Scan per Mail</h2>
+    <div class="channel-item-actions">{{ ch.state(smtp.enabled) }}{{ ch.toggle('/einstellungen/kanaele/smtp/schalten', smtp.enabled, 'Scan per Mail') }}</div>
+  </div>
+  <div class="card-body stack">
+    <p class="hint">Der Drucker schickt Scans als Mail direkt an DocuShelf. Jede Adresse unten führt in diesen Haushalt; eine Adresse pro Person (z. B. <span class="mono">scan-erika@…</span>) ordnet die Scans dieser Person zu.</p>
+    <dl class="kv">
+      <div><dt>SMTP-Empfang</dt><dd>
+        {% if smtp_config %}
+          {% if smtp_status %}{{ ch.state(smtp_status.running, 'läuft', 'gestoppt') }}{% endif %}
+          <span class="mono">{{ server_host }}:{{ smtp_config.port }}</span> <span class="muted">(im Container {{ smtp_config.host }}:{{ smtp_config.port }})</span>
+          {% if smtp_status and smtp_status.last_error %}<br><span class="text-danger">{{ smtp_status.last_error }}</span>{% endif %}
+          {% if not smtp_config.allowed_networks %}<br><span class="text-danger">DOCUSHELF_SMTP_ALLOWED_NETWORKS ist leer – jede Verbindung wird abgewiesen.</span>{% endif %}
+        {% else %}
+          <span class="status status-off"><span class="status-dot" aria-hidden="true"></span>ausgeschaltet</span>
+        {% endif %}
+      </dd></div>
+      {% if smtp_config and smtp_config.username %}<div><dt>Anmeldung</dt><dd>nötig (Benutzer <span class="mono">{{ smtp_config.username }}</span>)</dd></div>{% endif %}
+    </dl>
+    {% if not smtp_config %}
+    <div class="alert alert-warning" role="status">
+      {{ icon('alert') }}
+      <p>Der SMTP-Empfänger läuft nicht. Damit Scanner Mails schicken können, muss der Betreiber <span class="mono">DOCUSHELF_SMTP_ENABLED=true</span> und <span class="mono">DOCUSHELF_SMTP_ALLOWED_NETWORKS</span> setzen und den Port 2525 veröffentlichen (<span class="mono">DOCUSHELF_SMTP_BIND</span> in der <span class="mono">.env</span>). Die Adressen hier kannst du trotzdem schon eintragen.</p>
+    </div>
+    {% endif %}
+    {{ ch.message('smtp') }}
+    {% if smtp.recipients %}
+    <table class="table">
+      <thead><tr><th scope="col">Adresse</th><th scope="col">Person</th><th scope="col"><span class="visually-hidden">Aktion</span></th></tr></thead>
+      <tbody>
+        {% for r in smtp.recipients %}
+        <tr>
+          <td class="mono break">{{ r.address }}</td>
+          <td>{{ r.owner or '–' }}</td>
+          <td class="cell-action">
+            <form method="post" action="/einstellungen/kanaele/smtp/adressen/entfernen" data-confirm="Adresse {{ r.address }} entfernen? Mails an sie werden dann abgewiesen." data-confirm-ok="Entfernen" data-confirm-danger>
+              {{ m.csrf() }}
+              <input type="hidden" name="address" value="{{ r.address }}">
+              <button class="btn btn-ghost btn-small btn-danger-text" type="submit">Entfernen</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Noch keine Adresse – Mails werden abgewiesen.</p>
+    {% endif %}
+    {%- set typed = form_section == 'smtp' %}
+    <form class="channel-add" method="post" action="/einstellungen/kanaele/smtp/adressen">
+      {{ m.csrf() }}
+      <div class="field">
+        <label for="smtp-address">Neue Adresse</label>
+        <input id="smtp-address" class="input mono" type="email" name="address" required maxlength="254" value="{{ ch.pick(form_values, typed, 'address', '') }}" placeholder="scan-erika@docushelf.local" autocomplete="off">
+      </div>
+      {{ ch.owner_field('smtp-owner', ch.pick(form_values, typed, 'owner', '')) }}
+      <button class="btn" type="submit">{{ icon('plus') }} Hinzufügen</button>
+    </form>
+    <p class="hint">Am Drucker als Empfänger eintragen; als SMTP-Server <span class="mono">{{ server_host }}</span>, Port {{ smtp_config.port if smtp_config else 2525 }}, ohne Verschlüsselung (der Weg läuft im VPN). Die Domain der Adresse ist frei wählbar, sie muss nur hier stehen.</p>
+  </div>
+</section>
+
+{% for s in scanners %}
+{%- set scanner = s.scanner %}
+{%- set key = 'scanner:' ~ s.kind %}
+<section class="card" id="scanner-{{ s.kind }}" aria-labelledby="scanner-{{ s.kind }}-title">
+  <div class="card-head"><h2 id="scanner-{{ s.kind }}-title">{{ icon('scan') }} {{ s.help.title }}</h2>
+    <div class="channel-item-actions">{{ ch.state(scanner.enabled) }}{{ ch.toggle('/einstellungen/kanaele/scanner/' ~ s.kind ~ '/schalten', scanner.enabled, s.help.title) }}</div>
+  </div>
+  <div class="card-body stack">
+    <p class="hint">Der Drucker legt Scans in einen Ordner. Bekommt jede Person einen eigenen Unterordner, steht im Eingang, von wem der Scan ist. Ein ausgeschalteter Ordner wird nicht abgeholt – die Dateien warten, bis er wieder an ist.</p>
+    {{ ch.message(key) }}
+    {% if s.endpoints %}
+    <table class="table">
+      <thead><tr><th scope="col">Ordner</th><th scope="col">Person</th><th scope="col">Am Drucker eintragen</th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Aktionen</span></th></tr></thead>
+      <tbody>
+        {% for e in s.endpoints %}
+        {%- set point = e.endpoint %}
+        <tr>
+          <td class="mono">{{ point.folder }}</td>
+          <td>{{ point.owner or '–' }}</td>
+          <td class="mono break">{% if s.kind == 'smb' %}\\{{ server_host }}\{{ s.help.share }}\{{ point.folder }}{% else %}ftp://{{ server_host }}/{{ point.folder }}{% endif %}</td>
+          <td>{{ ch.state(point.enabled and scanner.enabled) }}{% if not e.exists and scanner.enabled %} <span class="text-danger">Ordner fehlt</span>{% endif %}</td>
+          <td class="cell-action channel-row-actions">
+            {{ ch.toggle('/einstellungen/kanaele/scanner/' ~ s.kind ~ '/endpunkte/schalten', point.enabled, 'Ordner ' ~ point.folder, {'folder': point.folder}) }}
+            <form method="post" action="/einstellungen/kanaele/scanner/{{ s.kind }}/endpunkte/entfernen" data-confirm="Scanner-Ordner „{{ point.folder }}“ entfernen? Der Ordner selbst bleibt liegen; Dateien darin werden dann ohne Person übernommen." data-confirm-ok="Entfernen" data-confirm-danger>
+              {{ m.csrf() }}
+              <input type="hidden" name="folder" value="{{ point.folder }}">
+              <button class="btn btn-ghost btn-small btn-danger-text" type="submit">Entfernen</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Noch keine Unterordner – alle Scans landen ohne Person im Eingang.</p>
+    {% endif %}
+    {%- set typed = form_section == key %}
+    <form class="channel-add" method="post" action="/einstellungen/kanaele/scanner/{{ s.kind }}/endpunkte">
+      {{ m.csrf() }}
+      {{ ch.owner_field('scanner-owner-' ~ s.kind, ch.pick(form_values, typed, 'owner', '')) }}
+      <div class="field">
+        <label for="scanner-folder-{{ s.kind }}">Ordnername <span class="optional">(optional)</span></label>
+        <input id="scanner-folder-{{ s.kind }}" class="input mono" type="text" name="folder" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._\-]*" value="{{ ch.pick(form_values, typed, 'folder', '') }}" placeholder="aus dem Namen der Person" data-channel-folder>
+      </div>
+      <button class="btn" type="submit">{{ icon('plus') }} Ordner anlegen</button>
+    </form>
+    <details class="disclosure channel-setup">
+      <summary class="btn btn-ghost btn-small">{{ icon('info') }} Einrichtung am Drucker</summary>
+      <div class="disclosure-body stack">
+        <dl class="kv kv-compact">
+          {% if s.kind == 'smb' %}
+          <div><dt>Freigabe</dt><dd class="mono">\\{{ server_host }}\{{ s.help.share }}{% if multi %} <span class="muted">(bei mehreren Haushalten die Freigabe dieses Haushalts)</span>{% endif %}</dd></div>
+          {% else %}
+          <div><dt>Server</dt><dd class="mono">{{ server_host }}, Port 21, passiver Modus</dd></div>
+          {% endif %}
+          <div><dt>Unterordner</dt><dd>der Ordnername aus der Tabelle</dd></div>
+          <div><dt>Konto</dt><dd>{{ s.help.account }}</dd></div>
+          <div><dt>Ordner auf dem Server</dt><dd class="mono break">{{ s.root }}</dd></div>
+          <div><dt>Bereitgestellt von</dt><dd>dem Container im Compose-Profil <span class="mono">{{ s.help.profile }}</span> (<span class="mono">docker compose --profile {{ s.help.profile }} up -d</span>)</dd></div>
+        </dl>
+        <p class="hint">Den {{ 'Samba' if s.kind == 'smb' else 'FTP' }}-Container verwaltet DocuShelf nicht selbst: Läuft er nicht, kommen keine Scans an, auch wenn der Kanal hier eingeschaltet ist. Als Serveradresse dient die VPN-Adresse des Servers (<span class="mono">DOCUSHELF_PRIVATE_IP</span>), hier ersatzweise der Name aus der Web-Adresse.</p>
+      </div>
+    </details>
+  </div>
+</section>
+{% endfor %}
+
+<section class="card" id="watch-ordner" aria-labelledby="watch-title">
+  <div class="card-head"><h2 id="watch-title">{{ icon('folder-open') }} Watch-Ordner</h2><span class="count">{{ watch|length }}</span></div>
+  <div class="card-body stack">
+    <p class="hint">Ordner außerhalb von DocuShelf (z. B. vom NAS in den Container eingebunden), aus denen neue Dateien übernommen werden. Der Pfad muss im Container erreichbar sein – neue Laufwerke bindet der Betreiber in der <span class="mono">compose.yaml</span> ein.</p>
+    {% for w in watch %}
+    {%- set folder = w.folder %}
+    {%- set key = 'watch:' ~ folder.name %}
+    <article class="channel-item" id="watch-{{ folder.name }}">
+      <div class="channel-item-head">
+        <div class="channel-item-title">
+          <h3>{{ folder.name }}</h3>
+          <span class="mono muted break">{{ folder.path }}</span>
+          {% if not w.available %}<span class="text-danger">nicht erreichbar</span>{% endif %}
+        </div>
+        <div class="channel-item-actions">
+          {{ ch.state(folder.enabled) }}
+          {{ ch.toggle('/einstellungen/kanaele/watch/' ~ (folder.name|urlpart) ~ '/schalten', folder.enabled, 'Watch-Ordner ' ~ folder.name) }}
+        </div>
+      </div>
+      <p class="hint">{{ 'Dateien werden nach der Übernahme entfernt.' if folder.remove_after_import else 'Dateien bleiben liegen und werden je Inhalt nur einmal übernommen.' }}</p>
+      {{ ch.message(key) }}
+      <details class="disclosure"{% if form_section == key %} open{% endif %}>
+        <summary class="btn btn-ghost btn-small">{{ icon('edit') }} Bearbeiten</summary>
+        <div class="disclosure-body">{{ ch.watch_form(key, folder, form_values) }}</div>
+      </details>
+      <form method="post" action="/einstellungen/kanaele/watch/{{ folder.name|urlpart }}/entfernen" data-confirm="Watch-Ordner „{{ folder.name }}“ entfernen? Der Ordner und seine Dateien bleiben unverändert." data-confirm-ok="Entfernen" data-confirm-danger>
+        {{ m.csrf() }}
+        <button class="btn btn-ghost btn-small btn-danger-text" type="submit">{{ icon('trash') }} Entfernen</button>
+      </form>
+    </article>
+    {% else %}
+    <p class="muted">Kein Watch-Ordner.</p>
+    {% endfor %}
+    {{ ch.message('watch:neu') }}
+    <details class="disclosure"{% if form_section == 'watch:neu' %} open{% endif %}>
+      <summary class="btn">{{ icon('plus') }} Watch-Ordner hinzufügen</summary>
+      <div class="disclosure-body">{{ ch.watch_form('watch:neu', none, form_values) }}</div>
+    </details>
+  </div>
+</section>
+
+</div>
+<script type="module" src="{{ static_url('channels.js') }}"></script>
+{% endblock %}

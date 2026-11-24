@@ -709,6 +709,8 @@ class InboxCard:
     protection: str | None = None
     # Why automatic filing left the item here (see auto_hold()); only while automatic filing is on.
     auto_hold: dict[str, Any] | None = None
+    # The item's intake context, for the channel origin ("von Erika · Scanner").
+    context: dict[str, Any] = field(default_factory=dict)
 
     @property
     def url(self) -> str:
@@ -745,6 +747,7 @@ def inbox_card(item: Any, *, folder_exists: Callable[[str], bool] | None = None,
     request = filing_request_from_suggestion(top)
     analysis = item.analysis or {}
     return InboxCard(
+        context=dict(item.context or {}) if isinstance(getattr(item, "context", None), dict) else {},
         id=item.id,
         state=item.state,
         title=item_title(item),
@@ -1027,7 +1030,7 @@ def recursive_counts(folders: Iterable[str], counts: Mapping[str, int]) -> dict[
 
 def folder_tree(folders: Iterable[str], counts: Mapping[str, int], current: str = "") -> list[TreeNode]:
     """Nested folders for the archive sidebar; the branch of ``current`` is open."""
-    folder_list = sorted(set(folders), key=lambda p: [casefold_key(part) for part in p.split("/")])
+    folder_list = sorted(set(folders), key=natural_path_key)
     totals = recursive_counts(folder_list, counts)
     nodes: dict[str, TreeNode] = {}
     roots: list[TreeNode] = []
@@ -1058,6 +1061,7 @@ def folder_tree(folders: Iterable[str], counts: Mapping[str, int], current: str 
 AUDIT_LABELS = {
     "file": "Abgelegt",
     "auto_file": "Automatisch abgelegt",
+    "channels_change": "Eingangskanäle geändert",
     "auto_review": "Automatische Ablage bestätigt",
     "update": "Bearbeitet",
     "move": "Verschoben",
@@ -1113,6 +1117,8 @@ def audit_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
             details.append(str(path))
     if entry.get("name") and action in ("create_rule", "delete_rule", "token_create", "token_revoke"):
         details.append(f"„{entry.get('name')}“")
+    if action == "channels_change" and entry.get("summary"):
+        details.append(str(entry.get("summary")))
     if action == "household_members":
         if entry.get("added"):
             details.append(f"hinzugefügt: {entry.get('added')}")
@@ -1979,14 +1985,39 @@ DEFAULT_VIEW = "kacheln"
 VIEW_COOKIE_MAX_AGE = 365 * 24 * 3600
 
 
+# Sort order of the archive, remembered like the view. By name first: folders are
+# often numbered ("01 Finanzen", "02 Wohnung") to set their order on purpose.
+SORT_COOKIE = "ds_sortierung"
+DEFAULT_SORT = "title"
+SORT_COOKIE_MAX_AGE = VIEW_COOKIE_MAX_AGE
+
+_DIGITS = re.compile(r"(\d+)")
+
+
 def archive_view(value: Any) -> str:
     text = str(value or "").strip().lower()
     return text if text in VIEWS else DEFAULT_VIEW
 
 
+def natural_key(name: str) -> tuple[Any, ...]:
+    """Sort key that compares names like people do: case and accents do not
+    matter and numbers count by value, so "2 B" < "10 A" and "Ärzte" sits with "A".
+    Equal values keep a stable order ("02" before "2")."""
+    folded = unicodedata.normalize("NFKD", casefold_key(name or ""))
+    plain = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    parts = _DIGITS.split(plain)
+    # split() alternates text and digit runs, so equal positions always hold equal types.
+    return tuple((int(part), part) if index % 2 else part for index, part in enumerate(parts))
+
+
+def natural_path_key(path: str) -> tuple[tuple[Any, ...], ...]:
+    """``natural_key`` for each part of a folder path, so children follow their parent."""
+    return tuple(natural_key(part) for part in (path or "").split("/"))
+
+
 def sort_folder_rows(rows: list[dict[str, Any]], order: str) -> list[dict[str, Any]]:
     """Folders of the list view in the order of the documents: by name or by their newest document."""
-    by_name = sorted(rows, key=lambda row: casefold_key(str(row.get("name") or "")))
+    by_name = sorted(rows, key=lambda row: natural_key(str(row.get("name") or "")))
     if order == "title_desc":
         return list(reversed(by_name))
     if order in ("date_desc", "date_asc"):

@@ -488,3 +488,39 @@ def test_thread_scans_on_trigger_and_stops_quickly(base_services):
         assert time.monotonic() - started < 2
     assert not intake.running
     intake.stop()  # idempotent
+
+
+# -- scanner endpoints (per-person subfolders) ---------------------------------------------
+
+
+def test_files_in_a_person_s_scanner_folder_carry_the_owner(base_services, samples):
+    from docushelf.config import EndpointConfig
+
+    endpoints = (EndpointConfig("erika", owner="erika"), EndpointConfig("max", owner="max", enabled=False))
+    intake, clock = make_intake(base_services, [SourceConfig(name="smb", stable_seconds=0, endpoints=endpoints)], subdir_stable_seconds=0)
+    root = base_services.layout.source_dir("smb")
+    samples.text_pdf(root / "Erika" / "a.pdf", ["A"])  # folder names match case-insensitively
+    samples.text_pdf(root / "max" / "b.pdf", ["B"])
+    samples.text_pdf(root / "andere" / "c.pdf", ["C"])
+    created = intake.scan_once()
+    items = {base_services.inbox.load(i).original_files[0].rsplit("/", 1)[-1]: base_services.inbox.load(i) for i in created}
+    assert set(items) == {"a.pdf", "c.pdf"}
+    assert items["a.pdf"].context["owner"] == "erika" and items["a.pdf"].context["endpoint"] == "Scanner"
+    assert items["a.pdf"].context["source_path"] == "Erika/a.pdf"
+    assert "owner" not in items["c.pdf"].context
+    assert (root / "max" / "b.pdf").exists()  # disabled: waits
+    assert (root / "Erika").is_dir()  # scanner folders are kept
+
+
+def test_batches_in_a_scanner_folder_keep_their_context_and_get_the_owner(base_services, samples, tmp_path):
+    from docushelf.config import EndpointConfig
+
+    intake, _ = make_intake(
+        base_services,
+        [SourceConfig(name="smb", stable_seconds=0, endpoints=(EndpointConfig("erika", owner="erika"),))],
+    )
+    pdf = samples.text_pdf(tmp_path / "x.pdf", ["X"]).read_bytes()
+    write_sendung(base_services.layout.source_dir("smb") / "erika", [[("x.pdf", pdf)]], context={"mail_from": "a@b.de"})
+    [item_id] = intake.scan_once()
+    context = base_services.inbox.load(item_id).context
+    assert context["mail_from"] == "a@b.de" and context["owner"] == "erika"

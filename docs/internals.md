@@ -36,7 +36,7 @@ Read `docs/concept.md` (idea and principles) first.
 
 | Module | Contents |
 |---|---|
-| `config.py` | `Settings`, `SourceConfig`, `ImapConfig`, `SmtpConfig`, `LlmConfig`, `AutoFileConfig`, `HOUSEHOLDS_FILE`, `load_settings(env=None, **overrides)` – see "Configuration" below |
+| `config.py` | `Settings`, `SourceConfig`, `EndpointConfig`, `ImapConfig`, `SmtpConfig`, `LlmConfig`, `AutoFileConfig`, `HOUSEHOLDS_FILE`, `load_settings(env=None, **overrides)` – see "Configuration" below |
 | `households.py` | `Household`, `Registry`, `load_households`, `settings_for`, `default_household` – see "Households" below |
 | `layout.py` | `Layout` (paths of the data volume, `archive_path(rel)`, `rel_archive(path)`, `state_dir(state)`, `source_dir(name)`, `data_dirs()` – the directories a household owns) |
 | `errors.py` | `DocuShelfError`, `ConfigError`, `PathError`, `NotFound`, `Conflict`, `ProcessingError(message, stage=, transient=)`, `UnsupportedFile`, `AuthError` |
@@ -58,18 +58,21 @@ Read `docs/concept.md` (idea and principles) first.
 
 ### Service container attributes
 
-`settings, household (Household), layout, index, audit, inbox, notifier, archive_lock,
-needs_full_scan, rules (RuleStore), tokens (TokenStore), reconciler (Reconciler),
+`settings, household (Household), layout, channels (ChannelManager), index, audit, inbox, notifier,
+archive_lock, needs_full_scan, rules (RuleStore), tokens (TokenStore), reconciler (Reconciler),
 searcher (Searcher), trash (Trash), ops (ArchiveOps), suggester (SuggestionEngine),
 pipeline (Pipeline), worker (Worker), intake (Intake), watcher (ArchiveWatcher),
-imap (ImapFetcher|None), smtp (SmtpReceiver|None)`; methods `start()`, `stop()`,
+imap (ImapFetcher|None – the first of `channels.fetchers`), smtp (SmtpReceiver|None)`; methods `start()`, `stop()`,
 `recover()` (also removes stale OCR work directories), `rebuild(user=)`.
 `Services(settings, *, household=None)` – without a household the `default` one is used.
 `smtp` is only set for a single household; with several households the registry owns
 the SMTP receiver.
 
-Construction order: rules, tokens, reconciler, searcher, trash, ops, suggester,
-pipeline, worker, intake, watcher. Constructors must not do I/O beyond cheap setup
+Construction order: layout, channels (reads `config/channels.yaml`; `settings` becomes
+`channels.effective_settings()`), rules, tokens, reconciler, searcher, trash, ops, suggester,
+pipeline, worker, intake, watcher, then `channels.build()` (IMAP fetchers, scanner folders).
+`start()` calls `channels.start()` (the fetchers), `stop()` `channels.stop()`. `services.settings`
+may be replaced at run time by the channel manager (only `sources` and `imap` change). Constructors must not do I/O beyond cheap setup
 and must not call collaborators that are constructed later.
 
 ### Configuration (config.py)
@@ -93,6 +96,12 @@ and must not call collaborators that are constructed later.
   `ANTHROPIC_API_KEY`). `api_key` is never shown or logged. The document text is sent to
   the configured endpoint.
 - `ImapConfig.allow_plaintext` (default False): with `ssl=False` STARTTLS is required.
+  `ImapConfig.name` / `.owner` (optional): mailbox name from the channel settings and the household
+  member its mail belongs to.
+- `SourceConfig.endpoints: tuple[EndpointConfig, ...]` and `SourceConfig.endpoint(folder)`
+  (case-insensitive). `EndpointConfig(folder, owner=None, enabled=True, label="Scanner")` is a
+  per-person subfolder of a drop zone (see `inbox/intake.py`).
+- `Settings.ios_shortcut_url` (`DOCUSHELF_IOS_SHORTCUT_URL`, https only, else `ConfigError`).
 
 ### Households (households.py)
 
@@ -105,6 +114,7 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
 - **With** the file (`configured(settings)`):
   ```yaml
   admins: [erika@example.org]    # may manage the users of every household in the web UI
+  admin_groups: [software-admins]  # OIDC groups whose members are admins as well
   households:
     - id: familie-a              # ^[a-z0-9][a-z0-9-]{0,31}$, used in paths
       name: "Familie A"
@@ -128,7 +138,7 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
 - `@dataclass(frozen=True) Household(id, name, path, groups, users, owner_names, notify_url,
   auto_file, imap, smtp_recipients, watch_folders)`; property `access` (German text).
 - `load_households(settings, *, env=None) -> list[Household]` (single-household fallback
-  included), `parse_admins(raw)`, `default_household(settings)`, `households_file(settings)`,
+  included), `parse_admins(raw)`, `parse_admin_groups(raw)` (both casefolded), `default_household(settings)`, `households_file(settings)`,
   `configured(settings)`, `clean_member(value)` (trimmed, non-empty, at most
   `MAX_MEMBER_LENGTH` = 200 characters, no control characters; else `ConfigError`).
 - `settings_for(settings, household, *, households=None) -> Settings` – without the file the
@@ -143,10 +153,19 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
   `settings_for(id)`, `services(id)` (created lazily, kept), `created()`,
   `for_user(user) -> list[Household]` (local admin: all; SSO: by `groups`/`users`, or the
   classic allow rules without the file; a token user: none, the web layer knows its household),
-  `admins` (from the file, casefolded), `is_admin(user)` (household mode only: the local
-  account, `admins`, or `settings.admin_users` from `DOCUSHELF_ADMIN_USERS`, matched by user name
-  or e-mail; never a token), `change_members(id, *, add=|remove=) -> Household`,
-  `by_smtp_recipient(address)`, `recover()`, `start()`, `stop()`, `close()`. `start()` also
+  `admins` and `admin_groups` (from the file, casefolded), `is_admin(user)` (household mode
+  only: the local account; an SSO account whose user name or e-mail is in `admins` or
+  `settings.admin_users` (`DOCUSHELF_ADMIN_USERS`), or one of whose login `groups` is in
+  `admin_groups` or `settings.admin_groups` (`DOCUSHELF_ADMIN_GROUPS`), all case-insensitive;
+  never a token). Admin rights grant no household: the settings page (and the member section on
+  it) still needs a household the admin belongs to; without one the SSO login is refused like for
+  anybody else (`oidc_login_allowed`).
+  Groups come from the session, so a group change applies at the next login. `change_members(id, *, add=|remove=) -> Household`,
+  `by_smtp_recipient(address)` (households with a channel manager answer through
+  `smtp_route`; `households.yaml` only for the others), `channels(id)` (manager of a created
+  container or None), `uses_channel_file(id)`, `recover()`, `start()`, `stop()`, `close()`.
+  Creating a container hooks its channel manager in: the global `smtp.recipient` is adopted by the
+  household in the data root, and every change re-runs `protect_households` (watch folders). `start()` also
   protects the households' watch folders from each other (`inbox.intake.protect_households`)
   and, in household mode, starts the one global SMTP receiver.
 - `change_members` (under the registry lock) reads `households.yaml`, refuses if the current file
@@ -158,7 +177,7 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
   the new file with `fsops.atomic_write_text`. Finally `_apply_members` replaces the running
   `Household` objects with copies carrying the new `groups`/`users` (everything else stays as
   started), rebuilds the id/recipient maps, updates `services.household` of created
-  containers and takes the new `admins`. `for_user`, the SSO login gate and the per-request
+  containers and takes the new `admins` and `admin_groups`. `for_user`, the SSO login gate and the per-request
   session check use these lists, so access changes with the next request.
 - Process-wide OCR limit: `pdf.ocr.OCR_SLOTS` (`BoundedSemaphore`), resized by
   `configure_ocr_slots(size)` (the registry calls it with `settings.ocr_parallel`). Every
@@ -176,6 +195,9 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
 <data>/papierkorb/<entry>/           entry.json + files/
 <data>/config/rules.yaml, tokens.yaml, settings.yaml, paperless-import.yaml, secret.key
 <data>/config/households.yaml        optional, global (see "Households")
+<data>/config/channels.yaml(.bak)    optional, per household: channels set in the web UI
+<data>/config/secrets/imap-<name>    IMAP passwords of channels.yaml (file 600, directory 700)
+<data>/config/shortcuts/DocuShelf senden.shortcut   optional, global: served by GET /kurzbefehl
 <data>/protokoll/audit-YYYY-MM.jsonl
 <data>/index/docushelf.sqlite3, index/cache/ (thumbnails), index/tmp/ (OCR work dirs),
               index/server.lock (global, held while `serve` runs)
@@ -183,8 +205,9 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
 
 With `households.yaml` every household has this whole tree below its own directory
 (`<data>/haushalte/<id>/` by default, `"."` = the data root). `settings.yaml`,
-`secret.key`, `households.yaml` and `server.lock` stay in the data root and are global;
-`rules.yaml`, `tokens.yaml`, `paperless-import.yaml` and the rest are per household.
+`secret.key`, `households.yaml`, `shortcuts/` and `server.lock` stay in the data root and are
+global; `rules.yaml`, `tokens.yaml`, `channels.yaml`, `secrets/`, `paperless-import.yaml` and the
+rest are per household.
 `index/tmp/` is disposable like the rest of `index/`. Inbox item directories may briefly
 hold `.docushelf-creating` and `original/.docushelf-*.part` while they are being created.
 
@@ -408,6 +431,10 @@ Transient OS errors (`EBUSY`, `EACCES`, `ETXTBSY`) are retried 3× with 0.5 s pa
   (never the source root).
 - External watch folders with `remove_after_import=False`: copy, remember the hash
   (`index.mark_hash_seen`) and skip known hashes.
+- Scanner endpoints (`source.endpoints`): a first-level subfolder matching an endpoint
+  (case-insensitive) belongs to that person. Disabled endpoints are not entered (files wait);
+  files (and batches) below an enabled one get `owner`, `owner_label` and `endpoint` in their
+  context (`channels.origin.mark`, existing values win). Endpoint folders are never removed.
 - After creating an item: `index.enqueue("process", item.id)` and `worker.kick()`.
 
 ### inbox/pipeline.py – `class Pipeline(services)`
@@ -616,6 +643,43 @@ Transient OS errors (`EBUSY`, `EACCES`, `ETXTBSY`) are retried 3× with 0.5 s pa
 - Records: audit actions `auto_file` (written by `ArchiveOps`) and `auto_review`
   (`{doc_id, status: "ok"}`, written when a person confirms with "Passt").
 
+### channels/store.py, channels/manager.py, channels/origin.py – channel settings
+- `config/channels.yaml` of a household (written by the web UI; format in the module docstring of
+  `store.py`): `imap` (list of `Mailbox(name, host, user, port, tls "ssl"|"starttls", folder,
+  processed_folder, rejected_folder, no_attachment_folder, allowed_senders, poll_seconds, owner,
+  enabled)`), `smtp` (`SmtpChannel(enabled, recipients: Recipient(address, owner))`), `scanner`
+  (`smb`/`ftp`: `ScannerChannel(kind, enabled, endpoints: Endpoint(folder, owner, enabled))`), `watch`
+  (`WatchFolder(name, path, remove_after_import, enabled)`), all in `ChannelConfig` (frozen,
+  `to_dict()`). `parse_channels(text)` is the only loader (start-up and before every write):
+  unknown keys, bad names (`[a-z0-9-]`, ≤ 32), folders (`[A-Za-z0-9._-]`, no item ids), addresses,
+  sender lists, ports, intervals (10 s … 24 h), duplicates → `ConfigError` (German).
+  `dump_channels(config)`; helpers `build_mailbox(values, name=, where=)`, `build_watch(values)`,
+  `clean_address`, `clean_folder`, `clean_name`, `clean_owner`.
+- `ChannelStore(config_dir)`: `path`, `backup_path`, `secrets_dir`, `exists()`, `load()` (also
+  requires a password for every enabled mailbox), `password(name)` (tightens loose permissions to
+  600), `has_password`, `secret_path(name)` (`secrets/imap-<name>`), `save(config, *, passwords=,
+  remove_secrets=)`: dump, parse again, check passwords, write new secrets (600, directory 700),
+  previous file → `channels.yaml.bak`, atomic write; secrets of mailboxes that are gone are deleted.
+  Nothing is written if validation fails.
+- `ChannelManager(services, settings, *, fetcher_factory=None)` = `services.channels`:
+  `from_file`, `config` (without the file: `defaults_from_settings(settings, household)` – the
+  environment mailbox as `postfach`, `households.yaml` recipients plus `smtp.recipient`, smb/ftp
+  from the sources, watch folders), `effective_settings()` (without the file the base settings
+  unchanged; with it `sources` = builtin drop zones + enabled scanners with `EndpointConfig`s +
+  enabled watch folders, `imap` = first enabled mailbox), `imap_configs()`, `fetchers`
+  (`name → ImapFetcher`), `password(name)`, `has_password(name)`, `smtp_route(address) ->
+  Recipient | None` (None when switched off or unknown), `mark_smtp(context, address)`,
+  `adopt_global_recipient(address)` (defaults only), `build()`, `start()`, `stop()`,
+  `update(change, *, passwords=, renamed=)` (under a lock: `change(config) -> config`, validate,
+  carry over passwords of the environment or of a renamed mailbox, `store.save`, then `apply()`;
+  `ConfigError` leaves everything unchanged), `reload()`, `apply()` (replace
+  `services.settings`, create scanner folders with the mode of the drop zone, stop/start only
+  fetchers whose `ImapConfig` changed, restart a running intake, call `listeners`),
+  `fetcher_status(name)`.
+- `origin.py`: context keys `owner`, `owner_label`, `endpoint`; `mark(context, *, owner,
+  endpoint)`, `owner_label(owner)` (`erika.mustermann@x` → `Erika Mustermann`),
+  `origin_label(context)` → `von Erika · Scanner` (Jinja filter `origin_label`).
+
 ### channels/mailparse.py, channels/imap.py, channels/smtp.py
 - `extract_documents(message, *, min_image_bytes=20_000) -> tuple[list[list[tuple[str, bytes]]], dict]`
   – every PDF is its own document, all images of one mail form one document;
@@ -631,7 +695,11 @@ Transient OS errors (`EBUSY`, `EACCES`, `ETXTBSY`) are retried 3× with 0.5 s pa
   created if missing; allowlist (else move to `rejected_folder`); de-duplicate by
   Message-ID hash (`index.mail_seen`); `write_sendung(layout.source_dir("mail"), …)`;
   then move the mail to `processed_folder` (UID MOVE or COPY+STORE+EXPUNGE); mails
-  without documents → `no_attachment_folder`. Never deletes mail.
+  without documents → `no_attachment_folder`. Never deletes mail. A fetcher may get its
+  `config=` directly (one per mailbox, see `ChannelManager`); with `config.owner` the batch context
+  gets owner and endpoint `Postfach „<name>“`.
+- `probe_connection(config, *, connection_factory=None) -> ImapProbe(ok, message, messages)` –
+  log in, `SELECT` the folder read-only, log out; never raises, German message, changes nothing.
 - `SmtpReceiver(services)` (single household) or `SmtpReceiver(config=, resolver=,
   multi_household=)`: aiosmtpd `Controller` on `smtp.host:smtp.port`; peer IP must be in
   `allowed_networks` (empty ⇒ reject all); size limit; optional AUTH (PLAIN/LOGIN) when
@@ -641,7 +709,10 @@ Transient OS errors (`EBUSY`, `EACCES`, `ETXTBSY`) are retried 3× with 0.5 s pa
   drop zone of the resolved household. With several households there is one global receiver:
   `receiver_for_registry(registry, config)` routes through `registry_resolver` – addresses from
   `smtp_recipients` of `households.yaml`, plus the global `smtp.recipient` for the household
-  living in the data root. The registry starts and stops it.
+  living in the data root. The registry starts and stops it. When the household's services have a
+  channel manager, it decides (`channels.smtp_route`, also for the single-household receiver), so
+  a household with `channels.yaml` accepts exactly the addresses listed there.
+  `store(..., recipient=)` marks the owner of a per-person address (`channels.mark_smtp`).
 
 ### importers/paperless.py – `class PaperlessImporter(services)`
 - Reads a `document_exporter` directory (`manifest.json`, or split manifests): models
@@ -711,6 +782,8 @@ Owned by two modules sets; the boundary:
   (remembered in the session); `user_households(request, user)`, `switchable_households(request)`
   (≥ 2 only), `switch_household(request, household_id) -> Household | None`,
   `is_household_admin(request, user)` (household mode, browser sessions only, `Registry.is_admin`),
+  `is_channel_admin(request, user)` (browser sessions only; household mode: `is_household_admin`;
+  single household: the local account, `admin_users`, members of `admin_groups`),
   `household_key(request) -> str | None`. `class NoHousehold(HTTPException)` (403, German page
   "Kein Haushalt freigegeben", template `no_household.html`). Every route gets its data only
   through `get_services(request)`; an id from another household is a 404. State kept per
@@ -770,6 +843,20 @@ Owned by two modules sets; the boundary:
   `Registry.change_members`, audits `household_members` with `added`/`removed` in the edited
   household's log; the settings section `#haushalte` is only rendered for admins),
   `GET|POST /teilen`.
+  Channel settings (`web/routes_channels.py`, included into the UI router):
+  `GET /einstellungen/kanaele` and the POST actions below it – `imap` (create/edit; field
+  `aktion=testen` runs `probe_connection` and saves nothing), `imap/{name}/schalten|entfernen`,
+  `smtp/schalten`, `smtp/adressen`, `smtp/adressen/entfernen`, `scanner/{kind}/schalten`,
+  `scanner/{kind}/endpunkte`, `scanner/{kind}/endpunkte/schalten|entfernen`, `watch`,
+  `watch/{name}/schalten|entfernen`. All need a browser login (`require_session_user`), CSRF and
+  `is_channel_admin` (else 403 page); toggles carry the target state in the field `an`. Changes go
+  through `services.channels.update`; input errors re-render the page (400) with the typed values
+  (never the password); every change writes the audit action `channels_change` with a German
+  `summary`. Owners must be among the household's `users` when it lists any. A watch folder may
+  not overlap the data directories of any household; an SMTP address of another household is
+  refused. Template helpers registered by the module: global `channels_admin(request)`, filter
+  `origin_label`; templates `channels.html`, `_channel_macros.html`, static `channels.css`,
+  `channels.js`.
   The archive page has two views, tiles and list, chosen with `?ansicht=kacheln|liste`
   and remembered in the cookie `ds_ansicht` (read server-side, works without JavaScript).
 - `web/routes_share.py` – phone sharing. `GET /manifest.webmanifest` (installable app with a
@@ -780,6 +867,13 @@ Owned by two modules sets; the boundary:
   otherwise it redirects to the login. The iOS shortcut is generated by
   `contrib/ios/build_shortcut.py` (standard library only; the shortcut posts to `/api/v1/upload`
   with a household's bearer token). Details: `docs/sharing.md`.
+  `GET /kurzbefehl` (login): `<data>/config/shortcuts/DocuShelf senden.shortcut` as
+  `application/octet-stream` attachment, else a 303 to `settings.ios_shortcut_url`, else a German
+  404 page; `shortcut_source(settings)` → `"file" | "url" | None` (Jinja global
+  `ios_shortcut(request)` hides the button). `POST /kurzbefehl/token` (browser session + CSRF)
+  creates a token `iPhone-Kurzbefehl` for the user (owner snapshot like every browser token),
+  keeps it in `views.one_time` under the session key `_new_token` with `phone: True` and
+  redirects to `/einstellungen#handy`, where `_share_help.html` shows it once.
 
 ### cli.py
 `docushelf [--data-dir PATH] [--household ID | --haushalt ID] [-v] COMMAND`:

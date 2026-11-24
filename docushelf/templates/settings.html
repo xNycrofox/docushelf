@@ -82,8 +82,9 @@
     </div>
   </section>
 
+  {%- set channel_info = channel_summary(request) if channel_summary is defined else none %}
   <section class="card" aria-labelledby="sources-title">
-    <div class="card-head"><h2 id="sources-title">{{ icon('inbox') }} Eingangskanäle</h2></div>
+    <div class="card-head"><h2 id="sources-title">{{ icon('inbox') }} Eingangskanäle</h2>{% if channels_admin is defined and channels_admin(request) %}<a class="btn btn-small" href="/einstellungen/kanaele">{{ icon('sliders') }} Verwalten</a>{% endif %}</div>
     <div class="card-body stack">
       <ul class="source-list">
         {% for s in sources %}
@@ -110,11 +111,15 @@
             {% if imap and imap.last_success %}<br><span class="muted">zuletzt abgerufen {{ m.time_tag(imap.last_success) }}{% if imap.imported_total %} · {{ imap.imported_total }} übernommen{% endif %}</span>{% endif %}
             {% if imap and imap.last_error %}<br><span class="text-danger">{{ imap.last_error }}</span>{% endif %}
           {% else %}aus{% endif %}
+          {% if channel_info and channel_info.mailboxes > 1 %}<br><span class="muted">{{ 'und ein weiteres Postfach' if channel_info.mailboxes == 2 else 'und ' ~ (channel_info.mailboxes - 1) ~ ' weitere Postfächer' }}</span>{% endif %}
         </dd></div>
         <div><dt>SMTP-Empfang</dt><dd>
           {% set smtp_config = smtp_config if smtp_config is defined else settings.smtp %}
           {% if smtp_config %}
-            {{ status_dot(smtp and smtp.running) }} <span class="mono">{{ smtp_config.host }}:{{ smtp_config.port }}</span> <span class="muted">· an {% if current_household %}{{ smtp_recipients|join(', ') if smtp_recipients else 'keine Adresse für diesen Haushalt' }}{% else %}{{ smtp_config.recipient }}{% endif %}</span>
+            {%- if channel_info is not none %}{% set smtp_recipients = channel_info.recipients %}{% set smtp_target = smtp_recipients|join(', ') if smtp_recipients else 'keine Adresse für diesen Haushalt' %}
+            {%- elif current_household %}{% set smtp_target = smtp_recipients|join(', ') if smtp_recipients else 'keine Adresse für diesen Haushalt' %}
+            {%- else %}{% set smtp_target = smtp_config.recipient %}{% endif %}
+            {{ status_dot(smtp and smtp.running) }} <span class="mono">{{ smtp_config.host }}:{{ smtp_config.port }}</span> <span class="muted">· an {{ smtp_target }}</span>
             {% if smtp and smtp.last_received %}<br><span class="muted">zuletzt empfangen {{ m.time_tag(smtp.last_received) }}</span>{% endif %}
             {% if smtp and smtp.last_error %}<br><span class="text-danger">{{ smtp.last_error }}</span>{% endif %}
           {% else %}aus{% endif %}
@@ -258,7 +263,7 @@
   <div class="card-body stack">
     <p class="hint">Für Skripte und Kurzbefehle (z. B. „Mit DocuShelf teilen“ auf dem iPhone). Ein Token wird als <span class="mono">Authorization: Bearer …</span> mitgeschickt und hat dieselben Rechte wie du – außer Tokens verwalten und im Papierkorb endgültig löschen. Es gilt nur, solange dein Konto für DocuShelf freigeschaltet ist. Geht ein Gerät verloren oder verlässt jemand den Haushalt: Token hier widerrufen.</p>
     {% if current_household %}<p class="hint">Ein Token gehört zum Haushalt <strong>{{ current_household.name }}</strong>: Uploads damit landen in dessen Eingang, andere Haushalte sieht er nicht.</p>{% endif %}
-    {% if new_token %}
+    {% if new_token and not new_token.phone %}
     <div class="token-reveal" role="status">
       <p><strong>Neuer Token „{{ new_token.name }}“</strong> – jetzt kopieren, er wird nicht noch einmal angezeigt:</p>
       <div class="copy-field">

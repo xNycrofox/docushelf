@@ -1,0 +1,5 @@
+{#- Who an inbox item came from when its channel knows the person ("von Erika · Scanner").
+    Include with the item's context:
+    {% with origin_context=item.context %}{% include "_channel_origin.html" %}{% endwith %} -#}
+{%- set origin_text = (origin_context|origin_label) if origin_context is defined and origin_context else none -%}
+{%- if origin_text %}<span class="badge badge-muted channel-origin" title="Eingangskanal">{{ icon('user') }}{{ origin_text }}</span>{% endif -%}

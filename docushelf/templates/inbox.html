@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
+{% block body_class %}layout-wide{% endblock %}
 {% block title %}Eingang{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -122,6 +123,7 @@
           </p>
           <p class="inbox-badges">
             {{ m.source_badge(card.source) }}
+            {% with origin_context=card.context %}{% include "_channel_origin.html" %}{% endwith %}
             {% if card.duplicate %}<span class="badge badge-warn">{{ icon('layers') }}Mögliches Duplikat</span>{% endif %}
             {% if card.protection %}<span class="badge badge-muted" title="{{ card.protection_notice }}" data-protection>{{ icon('lock') }}{{ card.protection_label }}</span>{% endif %}
             {% if card.pages_removed %}<span class="badge badge-muted" title="{{ plural(card.pages_removed, 'leere Seite', 'leere Seiten') }} entfernt">{{ icon('file') }}−{{ card.pages_removed }}</span>{% endif %}

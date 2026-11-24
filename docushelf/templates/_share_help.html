@@ -20,13 +20,22 @@
 
   <section class="stack" aria-labelledby="share-help-iphone">
     <h3 id="share-help-iphone">iPhone &amp; iPad</h3>
-    <p>Web-Apps erscheinen auf dem iPhone nicht im Teilen-Menü. Dafür gibt es den Kurzbefehl <strong>„DocuShelf senden“</strong>:</p>
+    <p>Web-Apps erscheinen auf dem iPhone nicht im Teilen-Menü. Dafür gibt es den Kurzbefehl <strong>„DocuShelf senden“</strong> – einen Mac brauchst du dafür nicht:</p>
+    {%- set shortcut = ios_shortcut(request) if ios_shortcut is defined and request is defined else none %}
     <ol class="tip-list">
-      <li>Erstelle unter <a href="/einstellungen#tokens">Einstellungen → API-Tokens</a> einen Token, z. B. „iPhone Kurzbefehl“, und kopiere ihn.</li>
-      <li>Hol dir den Kurzbefehl: Er wird mit <span class="mono">contrib/ios/build_shortcut.py</span> aus dem DocuShelf-Quellcode erzeugt und auf einem Mac signiert. Die Anleitung steht in <span class="mono">contrib/ios/README.md</span> – dort steht auch, wie du ihn ohne Mac direkt auf dem iPhone anlegst.</li>
-      <li>Beim Import fragt der Kurzbefehl nach der Serveradresse und dem Token.</li>
+      {% if shortcut %}
+      <li>Öffne diese Seite auf dem iPhone und tippe auf <strong>„Kurzbefehl installieren“</strong>. Die App Kurzbefehle fragt, ob du ihn hinzufügen willst.</li>
+      {% else %}
+      <li>Den Kurzbefehl stellt die Person bereit, die DocuShelf betreibt (Anleitung in <span class="mono">contrib/ios/README.md</span>). Bis dahin kannst du ihn auch selbst in der App Kurzbefehle anlegen – die Schritte stehen ebenfalls dort.</li>
+      {% endif %}
+      <li>Beim Hinzufügen fragt der Kurzbefehl nach der <strong>Serveradresse</strong> und einem <strong>Token</strong> – beides bekommst du hier unten.</li>
       <li>Danach im Teilen-Menü bei PDFs, Fotos oder Dateien <strong>„DocuShelf senden“</strong> wählen. Die Dateien landen im Eingang.</li>
     </ol>
+    {% if shortcut %}
+    <p class="button-row">
+      <a class="btn btn-primary" href="/kurzbefehl"{% if shortcut == 'file' %} download{% endif %}>{{ icon('download') }} Kurzbefehl installieren</a>
+    </p>
+    {% endif %}
     {% if share_server %}
     <div class="field">
       <label for="share-server-url">Serveradresse für den Kurzbefehl</label>
@@ -36,7 +45,22 @@
       </div>
     </div>
     {% endif %}
-    <p class="hint">Der Token hat dieselben Rechte wie du. Geht das Gerät verloren, widerrufe ihn unter Einstellungen → API-Tokens.</p>
+    {% if new_token is defined and new_token and new_token.phone %}
+    <div class="token-reveal" role="status" id="handy-token">
+      <p><strong>Token für dieses Handy</strong> – jetzt kopieren und im Kurzbefehl einfügen, er wird nicht noch einmal angezeigt:</p>
+      <div class="copy-field">
+        <input class="input mono" type="text" value="{{ new_token.token }}" readonly id="phone-token-value" aria-label="Neuer Token für den Kurzbefehl">
+        <button class="btn btn-primary" type="button" data-copy="#phone-token-value">{{ icon('copy') }} Kopieren</button>
+      </div>
+    </div>
+    {% elif csrf_token is defined and csrf_token and user is defined and user and user.method != 'token' %}
+    <form method="post" action="/kurzbefehl/token">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {%- if household %}<input type="hidden" name="household" value="{{ household.id }}">{% endif %}
+      <button class="btn" type="submit">{{ icon('key') }} Token für dieses Handy erstellen</button>
+    </form>
+    {% endif %}
+    <p class="hint">Der Token hat dieselben Rechte wie du{% if household %} und gilt nur für den Haushalt {{ household.name }}{% endif %}. Geht das Gerät verloren, widerrufe ihn unter <a href="/einstellungen#tokens">Einstellungen → API-Tokens</a> („iPhone-Kurzbefehl“).</p>
   </section>
 </div>
 <script type="module" src="{{ static_url('share.js') }}"></script>

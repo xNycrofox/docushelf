@@ -18,14 +18,44 @@ What the shortcut does:
 
 The texts inside the shortcut are German, like the rest of DocuShelf.
 
+## Who needs what
+
+**Users never need a Mac.** Once the operator has made the shortcut available (below), everybody
+installs it from DocuShelf itself:
+
+1. Open DocuShelf in Safari on the iPhone or iPad, go to **Einstellungen → Handy & Tablet**.
+2. Tap **Kurzbefehl installieren** (`/kurzbefehl`). The Shortcuts app asks whether to add it.
+3. Tap **Token für dieses Handy erstellen**, then **Kopieren** – the token is shown only once.
+   The server address is shown right above it, with its own copy button.
+4. Answer the two questions of the Shortcuts app with the address and the token. Done.
+
+**The operator signs once – or not at all.** iOS only imports signed shortcuts, and the signature
+needs a Mac. One Mac, once, is enough for the whole installation; any Mac will do (a friend's, a
+colleague's, a borrowed one). Choose one of:
+
+- **File on the server:** build and sign the file (steps 1 and 2 below) and copy it to
+  `<data>/config/shortcuts/DocuShelf senden.shortcut` on the server. `GET /kurzbefehl` serves it
+  to logged-in users as a download.
+- **iCloud link:** whoever has the shortcut in their Shortcuts app (signed file imported, or
+  built by hand on an iPhone as described in
+  [Building the shortcut by hand](#building-the-shortcut-by-hand) – no Mac at all) opens its
+  menu → **Share** → **Copy iCloud Link** and puts the link into the `.env`:
+  `DOCUSHELF_IOS_SHORTCUT_URL=https://www.icloud.com/shortcuts/…`. `GET /kurzbefehl` then
+  redirects there. Best share the generated shortcut, which asks for address and token when it
+  is added. A hand-built shortcut contains your token: never share it as it is – empty the token
+  in its request header first, and tell people to enter their own after adding it.
+
+If a file lies on the server, it wins over the link. Without either, the button is hidden and
+the settings page points to this guide.
+
 Requirements:
 
 - The device must reach DocuShelf: if DocuShelf is only available in your VPN (Tailscale,
   WireGuard …), the VPN has to be on while sharing. The API checks the token itself, so the
   upload address must not sit behind a login page of a proxy.
-- Signing needs a Mac with macOS 12 or later that is signed in with an Apple Account. No Mac?
-  Build the shortcut by hand on the phone instead, see
-  [Building the shortcut by hand](#building-the-shortcut-by-hand).
+- Signing needs a Mac with macOS 12 or later that is signed in with an Apple Account – once, for
+  the operator (see above). No Mac anywhere? Use the iCloud link of a hand-built shortcut, or let
+  everybody build it by hand, see [Building the shortcut by hand](#building-the-shortcut-by-hand).
 
 ## 1. Build the file
 
@@ -73,9 +103,15 @@ shortcuts sign --mode anyone --input "DocuShelf senden.shortcut" --output "signe
 
 **Never commit a signed shortcut.** The signature contains a certificate that identifies the
 Apple Account that signed it. The repository only contains the generator; build and sign the
-file on your own Mac and pass it on directly (AirDrop, Messages, mail).
+file on a Mac and put it on your own server (`<data>/config/shortcuts/`, see
+[Who needs what](#who-needs-what)) or pass it on directly (AirDrop, Messages, mail). The file in
+`config/shortcuts/` is only handed out to logged-in users.
 
 ## 3. Create an API token in DocuShelf
+
+The quickest way is the button **Token für dieses Handy erstellen** under
+**Einstellungen → Handy & Tablet**: one tap, the token is named `iPhone-Kurzbefehl` and shown
+once with a copy button. Alternatively:
 
 1. Open DocuShelf in the browser, go to **Einstellungen → API-Tokens**.
 2. Enter a name for the device, for example `iPhone Anna`, and press **Token erstellen**.
@@ -88,8 +124,9 @@ for good) and is valid only as long as your account is allowed to use DocuShelf.
 
 ## 4. Import the shortcut
 
-1. Send `signed/DocuShelf senden.shortcut` to the iPhone or iPad (AirDrop, iCloud Drive, mail)
-   and tap it. On a Mac, double-click it.
+1. Tap **Kurzbefehl installieren** under **Einstellungen → Handy & Tablet** (if the operator has
+   set it up), or send `signed/DocuShelf senden.shortcut` to the iPhone or iPad (AirDrop, iCloud
+   Drive, mail) and tap it. On a Mac, double-click it.
 2. The Shortcuts app opens. Tap **Add Shortcut** (*Kurzbefehl hinzufügen*) or **Set Up
    Shortcut**.
 3. Answer the two questions:

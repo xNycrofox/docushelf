@@ -53,6 +53,15 @@ SESSION_COOKIE = "docushelf_session"
 BODY_OVERHEAD = 1024 * 1024
 
 # ``form-action`` stays last: security_headers() appends the identity provider to it.
+#
+# The document viewer (static/viewer.js with the vendored PDF.js build) needs no
+# more than this: the library and its worker are module scripts from 'self'
+# (``worker-src 'self'``), the file is fetched from the same origin, sizes and the
+# text layer are set through the CSS object model (no inline styles), and eval
+# is switched off in the viewer (``isEvalSupported: false``). PDF.js decodes a few
+# rare image formats (JPEG 2000, ICC colour) with WebAssembly when the policy
+# allows ``'wasm-unsafe-eval'`` and otherwise falls back to its JavaScript
+# decoders, so that keyword is deliberately not granted.
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; img-src 'self' data: blob:; frame-src 'self'; object-src 'self'; "
     "manifest-src 'self'; worker-src 'self'; "

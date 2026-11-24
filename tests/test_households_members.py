@@ -2,7 +2,8 @@
 
 Two households: "familie-a" (data root, group familie-a) and "eltern" (group
 eltern, user opa). Admins are the local emergency account, the ``admins`` of
-households.yaml (berta) and ``DOCUSHELF_ADMIN_USERS``. A change is written back
+households.yaml (berta), ``DOCUSHELF_ADMIN_USERS`` and the members of the
+``admin_groups`` / ``DOCUSHELF_ADMIN_GROUPS``. A change is written back
 to households.yaml (with a .bak) and applies to the running registry at once.
 """
 
@@ -45,6 +46,8 @@ USERS = {
     "berta": ["familie-a"],
     "carl": ["familie-a"],
     "zoe": ["sonstwer"],
+    "dora": ["familie-a", "Software-Admins"],
+    "emil": ["software-admins"],
 }
 
 
@@ -416,3 +419,101 @@ def test_the_file_keeps_its_permissions(setup):
     assert add(admin(setup), "eltern", "zoe").status_code == 303
     assert setup.path.stat().st_mode & 0o777 == 0o600
     assert setup.path.with_name("households.yaml.bak").stat().st_mode & 0o777 == 0o600
+
+
+# ---------------------------------------------------------------------------
+# Admins by OIDC group
+
+GROUP_FILE_TEXT = FILE_TEXT.replace("admins: [Berta]", "admins: [Berta]\nadmin_groups: [software-admins]")
+
+
+@pytest.fixture
+def group_setup(env, data_dir, monkeypatch):
+    data = _setup(env, data_dir, monkeypatch, text=GROUP_FILE_TEXT)
+    yield data
+    data.registry.stop()
+    data.registry.close()
+
+
+def test_members_of_an_admin_group_are_admins(group_setup):
+    assert group_setup.registry.admin_groups == ("software-admins",)
+    dora, _ = sso(group_setup, "dora")  # group spelled "Software-Admins" in the claim
+    page = dora.get("/einstellungen").text
+    assert 'id="haushalte"' in page
+    assert add(dora, "eltern", "dora").status_code == 303
+    assert group_setup.registry.get("eltern").users == ("opa", "dora")
+    assert file_data(group_setup)["admin_groups"] == ["software-admins"]  # kept when the file is rewritten
+    assert group_setup.registry.admin_groups == ("software-admins",)
+
+    anna, _ = sso(group_setup, "anna")
+    assert 'id="haushalte"' not in anna.get("/einstellungen").text
+    assert add(anna, "eltern", "anna").status_code == 403
+
+
+def test_an_admin_group_grants_no_household(group_setup):
+    registry = group_setup.registry
+    emil = SimpleNamespace(username="emil", email=None, method="oidc", groups=("software-admins",))
+    assert registry.is_admin(emil)
+    assert registry.for_user(emil) == []
+    client, login = sso(group_setup, "emil", expect_ok=False)
+    assert "error=" in login.headers["location"]  # the SSO login itself is refused
+    response = client.get("/einstellungen", follow_redirects=False)
+    assert response.status_code in (302, 303, 307) and "/login" in response.headers["location"]
+
+
+def test_admin_groups_never_make_a_token_an_admin(group_setup):
+    token = SimpleNamespace(username="t", email=None, method="token", groups=("software-admins",))
+    assert not group_setup.registry.is_admin(token)
+
+
+def test_admin_groups_from_the_environment(env, data_dir, monkeypatch):
+    env["DOCUSHELF_ADMIN_GROUPS"] = "Software-Admins, andere"
+    data = _setup(env, data_dir, monkeypatch)
+    try:
+        assert data.settings.admin_groups == ("software-admins", "andere")
+        assert data.registry.admin_groups == ()
+        dora, _ = sso(data, "dora")
+        assert 'id="haushalte"' in dora.get("/einstellungen").text
+        assert add(dora, "eltern", "dora").status_code == 303
+        anna, _ = sso(data, "anna")
+        assert add(anna, "eltern", "anna").status_code == 403
+    finally:
+        data.registry.stop()
+        data.registry.close()
+
+
+def test_admin_groups_are_reloaded_with_a_member_change(setup):
+    dora, _ = sso(setup, "dora")
+    assert 'id="haushalte"' not in dora.get("/einstellungen").text
+    text = setup.path.read_text(encoding="utf-8")
+    text = text.replace("admins: [Berta]", "admins: [Berta]\nadmin_groups: [SOFTWARE-ADMINS]")
+    setup.path.write_text(text, encoding="utf-8")
+    assert add(admin(setup), "eltern", "zoe").status_code == 303
+    assert setup.registry.admin_groups == ("software-admins",)
+    assert 'id="haushalte"' in dora.get("/einstellungen").text
+
+
+def test_admin_groups_entry_is_validated(env, data_dir):
+    path = data_dir / "config" / "households.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    settings = load_settings(env)
+    path.write_text(GROUP_FILE_TEXT.replace("[software-admins]", "{software-admins: true}"), encoding="utf-8")
+    with pytest.raises(ConfigError, match="admin_groups muss eine Liste sein"):
+        households_module.load_households(settings)
+    path.write_text(GROUP_FILE_TEXT.replace("[software-admins]", "[[nested]]"), encoding="utf-8")
+    with pytest.raises(ConfigError, match="admin_groups: jeder Eintrag muss ein Text sein"):
+        households_module.load_households(settings)
+    path.write_text(GROUP_FILE_TEXT.replace("admin_groups:", "admin_group:"), encoding="utf-8")
+    with pytest.raises(ConfigError, match="admin_groups"):
+        households_module.load_households(settings)
+
+
+def test_admin_groups_do_nothing_without_households(env, data_dir):
+    env["DOCUSHELF_ADMIN_GROUPS"] = "software-admins"
+    registry = Registry(load_settings(env))
+    try:
+        user = SimpleNamespace(username="dora", email=None, method="oidc", groups=("software-admins",))
+        assert not registry.multi
+        assert not registry.is_admin(user)
+    finally:
+        registry.close()

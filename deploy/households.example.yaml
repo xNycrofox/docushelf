@@ -15,11 +15,15 @@
 
 # Wer die Mitglieder (users) der Haushalte in der Weboberfläche pflegen darf
 # (Einstellungen → Haushalte): Benutzername oder bestätigte E-Mail-Adresse, wie
-# bei „users“. Zusätzlich zählen DOCUSHELF_ADMIN_USERS und immer das lokale
-# Notfallkonto. Achtung: Beim Speichern aus der Oberfläche schreibt DocuShelf
+# bei „users“, unter „admins“; unter „admin_groups“ OIDC-Gruppen, deren
+# Mitglieder ebenfalls Admins sind (Groß-/Kleinschreibung egal, wirkt ab der
+# nächsten Anmeldung). Zusätzlich zählen DOCUSHELF_ADMIN_USERS,
+# DOCUSHELF_ADMIN_GROUPS und immer das lokale Notfallkonto. Admin sein gibt
+# keinen Zugriff auf einen Haushalt – dafür zählen nur groups/users unten. Achtung: Beim Speichern aus der Oberfläche schreibt DocuShelf
 # diese Datei neu – Kommentare gehen dabei verloren, die vorige Fassung bleibt
 # als households.yaml.bak liegen.
 admins: ["erika@example.org"]
+admin_groups: [software-admins]
 
 households:
 
@@ -50,6 +54,9 @@ households:
     # Eigenes Postfach für Rechnungen zum Weiterleiten (IMAP-Abruf). Genau eines
     # von password / password_file / password_env angeben. Passwörter werden nie
     # protokolliert; am besten password_file (Docker-Secret) verwenden.
+    # imap, smtp_recipients und watch_folders sind nur Voreinstellungen: Sobald ein
+    # Admin die Eingangskanäle des Haushalts in der Oberfläche speichert
+    # (<haushalt>/config/channels.yaml), gelten für ihn nur noch die Werte dort.
     imap:
       host: imap.example.org
       user: dokumente-a@example.org

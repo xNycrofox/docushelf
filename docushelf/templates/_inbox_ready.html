@@ -1,4 +1,5 @@
 {% import "_macros.html" as m with context %}
+{% import "_viewer.html" as v with context %}
 <script type="application/json" id="folders-data">{{ folders|script_json }}</script>
 <script type="application/json" id="tags-data">{{ tags|script_json }}</script>
 
@@ -10,31 +11,14 @@
       <figcaption class="preview-placeholder-note">{{ icon('lock') }}<span>Keine Vorschau: Die PDF ist mit einem Passwort geschützt. Lade sie herunter und öffne sie mit dem Passwort, um sie anzusehen.</span></figcaption>
     </figure>
     {% else %}
-    <div class="preview-frame">
-      <iframe src="/api/v1/inbox/{{ item.id }}/document#view=FitH&amp;navpanes=0" data-preview-frame data-src="/api/v1/inbox/{{ item.id }}/document"
-              title="Vorschau von „{{ title }}“" loading="lazy"></iframe>
-    </div>
-    <a class="preview-first" href="/api/v1/inbox/{{ item.id }}/document" target="_blank" rel="noopener">
-      <img src="/api/v1/inbox/{{ item.id }}/pages/1.png?w=700" srcset="/api/v1/inbox/{{ item.id }}/pages/1.png?w=700 1x, /api/v1/inbox/{{ item.id }}/pages/1.png?w=1400 2x"
-           alt="Seite 1 von „{{ title }}“" loading="lazy" decoding="async" width="700" height="990">
-    </a>
+    {{ v.viewer('/api/v1/inbox/' ~ item.id ~ '/document', '/api/v1/inbox/' ~ item.id ~ '/pages', preview_pages, item.page_count or preview_pages, title) }}
     {% endif %}
-    {% if preview_pages > 1 %}
-    <ol class="page-strip" aria-label="Seiten">
-      {% for n in range(1, preview_pages + 1) %}
-      <li>
-        <a class="page-thumb{% if n == 1 %} is-current{% endif %}" href="/api/v1/inbox/{{ item.id }}/pages/{{ n }}.png?w=1400" target="_blank" rel="noopener" data-page="{{ n }}" aria-label="Seite {{ n }}">
-          <img src="/api/v1/inbox/{{ item.id }}/pages/{{ n }}.png?w=120" srcset="/api/v1/inbox/{{ item.id }}/pages/{{ n }}.png?w=120 1x, /api/v1/inbox/{{ item.id }}/pages/{{ n }}.png?w=240 2x" alt="" loading="lazy" decoding="async" width="120" height="170">
-          <span class="page-number">{{ n }}</span>
-        </a>
-      </li>
-      {% endfor %}
-    </ol>
-    {% endif %}
+    {% if preview_unavailable or originals %}
     <p class="preview-links">
-      {% if preview_unavailable %}<a href="/api/v1/inbox/{{ item.id }}/document?download=1" download>{{ icon('download') }} Herunterladen</a>{% else %}<a href="/api/v1/inbox/{{ item.id }}/document" target="_blank" rel="noopener">{{ icon('external') }} In neuem Tab öffnen</a>{% endif %}
+      {% if preview_unavailable %}<a href="/api/v1/inbox/{{ item.id }}/document?download=1" download>{{ icon('download') }} Herunterladen</a>{% endif %}
       {% for f in originals %}<a href="{{ f.url }}" download="{{ f.name }}">{{ icon('download') }} Original{% if originals|length > 1 %} {{ f.number }}{% endif %}</a>{% endfor %}
     </p>
+    {% endif %}
   </section>
 
   <div class="item-side">
