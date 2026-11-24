@@ -1,0 +1,154 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_lead %}{% if multi %}Wer zu welchem Haushalt gehört und wer DocuShelf verwalten darf. Änderungen gelten sofort – wer entfernt wird, verliert beim nächsten Seitenaufruf den Zugriff.{% else %}DocuShelf läuft mit einem Haushalt. Wer hinein darf, legst du unter Anmeldung &amp; Sicherheit fest.{% endif %}{% endblock %}
+{% block settings_content %}
+<div class="settings-stack">
+{% if multi %}
+
+  {% call s.info_card('administratoren', 'Administratoren', 'shield', 'Administratoren pflegen die Haushalte und alle Einstellungen der Installation. Der lokale Notfallzugang ist immer Administrator.') %}
+  <div class="member-columns">
+    <div class="stack-tight">
+      <h3 class="subhead">Personen</h3>
+      {% if admins %}
+      <ul class="entry-list">
+        {% for name in admins %}
+        <li>
+          <span class="mono break">{{ name }}</span>
+          <form method="post" action="/einstellungen/haushalte/administratoren/entfernen" data-confirm="„{{ name }}“ als Administrator entfernen?" data-confirm-ok="Entfernen" data-confirm-danger>
+            {{ m.csrf() }}<input type="hidden" name="art" value="person"><input type="hidden" name="name" value="{{ name }}">
+            <button class="btn btn-ghost btn-small btn-danger-text" type="submit" aria-label="{{ name }} als Administrator entfernen">Entfernen</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted">Keine Personen eingetragen.</p>{% endif %}
+    </div>
+    <div class="stack-tight">
+      <h3 class="subhead">Gruppen</h3>
+      {% if admin_groups %}
+      <ul class="entry-list">
+        {% for name in admin_groups %}
+        <li>
+          <span class="mono break">{{ name }}</span>
+          <form method="post" action="/einstellungen/haushalte/administratoren/entfernen" data-confirm="Gruppe „{{ name }}“ als Administratorgruppe entfernen?" data-confirm-ok="Entfernen" data-confirm-danger>
+            {{ m.csrf() }}<input type="hidden" name="art" value="gruppe"><input type="hidden" name="name" value="{{ name }}">
+            <button class="btn btn-ghost btn-small btn-danger-text" type="submit" aria-label="Gruppe {{ name }} entfernen">Entfernen</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted">Keine Gruppen eingetragen.</p>{% endif %}
+    </div>
+  </div>
+  <form class="add-row" method="post" action="/einstellungen/haushalte/administratoren">
+    {{ m.csrf() }}
+    <div class="field">
+      <label for="admin-kind">Art</label>
+      <select id="admin-kind" class="select" name="art"><option value="person">Person</option><option value="gruppe">Gruppe</option></select>
+    </div>
+    <div class="field">
+      <label for="admin-name">Benutzername, E-Mail oder Gruppe</label>
+      <input id="admin-name" class="input" type="text" name="name" required maxlength="{{ max_member_length }}" autocomplete="off">
+    </div>
+    <button class="btn" type="submit">{{ icon('plus') }} Hinzufügen</button>
+  </form>
+  {% if env_admins or env_admin_groups %}
+  <p class="hint">Außerdem Administrator laut <a href="/einstellungen/anmeldung#zugang">Anmeldung &amp; Sicherheit</a>:
+    {% for n in env_admins %}<span class="chip chip-quiet mono">{{ n }}</span> {% endfor %}{% for g in env_admin_groups %}<span class="chip chip-quiet mono">{{ icon('users') }}{{ g }}</span> {% endfor %}</p>
+  {% endif %}
+  {% endcall %}
+
+  {% for h in households %}
+  <section class="card settings-card" id="haushalt-{{ h.id }}" aria-labelledby="haushalt-{{ h.id }}-title">
+    <header class="settings-card-head">
+      <div class="settings-card-title">
+        <h2 id="haushalt-{{ h.id }}-title">{{ icon('building') }} {{ h.name }}</h2>
+        {% if h.current %}<span class="badge badge-accent">du arbeitest gerade hier</span>{% endif %}
+      </div>
+      <p class="settings-card-intro">Kennung <span class="mono">{{ h.id }}</span> · <span class="break" title="{{ h.path }}">{{ h.folder }}</span></p>
+    </header>
+    <div class="settings-card-body">
+      <form class="add-row" method="post" action="/einstellungen/haushalte/{{ h.id|urlpart }}/name">
+        {{ m.csrf() }}
+        <div class="field">
+          <label for="name-{{ h.id }}">Name</label>
+          <input id="name-{{ h.id }}" class="input" type="text" name="name" value="{{ h.name }}" required maxlength="80" autocomplete="off">
+        </div>
+        <button class="btn" type="submit">{{ icon('check') }} Umbenennen</button>
+      </form>
+
+      <div class="member-columns">
+        <div class="stack-tight">
+          <h3 class="subhead">Mitglieder</h3>
+          {% if h.users %}
+          <ul class="entry-list">
+            {% for u in h.users %}
+            <li>
+              <span class="mono break">{{ u }}</span>
+              <form method="post" action="/einstellungen/haushalte/{{ h.id|urlpart }}/mitglieder/entfernen" data-confirm="„{{ u }}“ aus dem Haushalt „{{ h.name }}“ entfernen? Der Zugriff endet mit dem nächsten Seitenaufruf, außer über eine Gruppe." data-confirm-ok="Entfernen" data-confirm-danger>
+                {{ m.csrf() }}
+                <input type="hidden" name="user" value="{{ u }}">
+                <button class="btn btn-ghost btn-small btn-danger-text" type="submit" aria-label="{{ u }} entfernen">Entfernen</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}<p class="muted">Noch keine einzelnen Benutzer.</p>{% endif %}
+          <form class="inline-form" method="post" action="/einstellungen/haushalte/{{ h.id|urlpart }}/mitglieder">
+            {{ m.csrf() }}
+            <label class="visually-hidden" for="member-{{ h.id }}">Benutzer für {{ h.name }} hinzufügen</label>
+            <input id="member-{{ h.id }}" class="input" type="text" name="user" required maxlength="{{ max_member_length }}" autocomplete="off" placeholder="Benutzer oder E-Mail">
+            <button class="btn btn-icon" type="submit" aria-label="Mitglied hinzufügen" title="Hinzufügen">{{ icon('plus') }}</button>
+          </form>
+        </div>
+        <div class="stack-tight">
+          <h3 class="subhead">Gruppen</h3>
+          {% if h.groups %}
+          <ul class="entry-list">
+            {% for g in h.groups %}
+            <li>
+              <span class="mono break">{{ g }}</span>
+              <form method="post" action="/einstellungen/haushalte/{{ h.id|urlpart }}/gruppen/entfernen" data-confirm="Gruppe „{{ g }}“ aus dem Haushalt „{{ h.name }}“ entfernen? Ihre Mitglieder verlieren den Zugriff, wenn sie nicht einzeln eingetragen sind." data-confirm-ok="Entfernen" data-confirm-danger>
+                {{ m.csrf() }}
+                <input type="hidden" name="group" value="{{ g }}">
+                <button class="btn btn-ghost btn-small btn-danger-text" type="submit" aria-label="Gruppe {{ g }} entfernen">Entfernen</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}<p class="muted">Keine Gruppen.</p>{% endif %}
+          <form class="inline-form" method="post" action="/einstellungen/haushalte/{{ h.id|urlpart }}/gruppen">
+            {{ m.csrf() }}
+            <label class="visually-hidden" for="group-{{ h.id }}">Gruppe für {{ h.name }} hinzufügen</label>
+            <input id="group-{{ h.id }}" class="input" type="text" name="group" required maxlength="{{ max_member_length }}" autocomplete="off" placeholder="Gruppe aus dem Anmeldedienst">
+            <button class="btn btn-icon" type="submit" aria-label="Gruppe hinzufügen" title="Hinzufügen">{{ icon('plus') }}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endfor %}
+
+  <p class="hint settings-footnote">Gespeichert wird in <span class="mono" title="{{ households_file }}">config/households.yaml</span>; die vorige Fassung liegt danach als <span class="mono">households.yaml.bak</span> daneben, Kommentare in der Datei gehen beim Speichern verloren. Haushalte anlegen oder entfernen geht nur in dieser Datei und wirkt nach einem Neustart (Anleitung: DEPLOY.md, Abschnitt „Mehrere Haushalte“).</p>
+
+{% else %}
+
+  {% for v in sections %}{{ s.section_card(v) }}{% endfor %}
+
+  {% call s.info_card('zugang-info', 'Wer darf hinein', 'users', 'Mit nur einem Haushalt entscheiden die Regeln der Anmeldung, wer DocuShelf nutzen darf.') %}
+  <dl class="kv">
+    <div><dt>Benutzer</dt><dd>{% for u in allowed_users %}<span class="chip chip-quiet mono">{{ u }}</span> {% else %}<span class="muted">keine</span>{% endfor %}</dd></div>
+    <div><dt>Gruppen</dt><dd>{% for g in allowed_groups %}<span class="chip chip-quiet mono">{{ g }}</span> {% else %}<span class="muted">keine</span>{% endfor %}</dd></div>
+    <div><dt>Alle Konten</dt><dd>{{ 'zugelassen' if allow_all else 'nein' }}</dd></div>
+  </dl>
+  <p><a class="btn btn-small" href="/einstellungen/anmeldung#zugang">{{ icon('shield') }} Zugang ändern</a></p>
+  {% endcall %}
+
+  {% call s.info_card('mehrere', 'Mehrere Haushalte', 'building', 'Teilen sich mehrere Familien eine Installation, bekommt jede ein eigenes Archiv, einen eigenen Eingang und eigene Kanäle.') %}
+  <p class="hint">Dafür legt der Betreiber die Datei <span class="mono">config/households.yaml</span> an (Vorlage: <span class="mono">deploy/households.example.yaml</span>) und startet DocuShelf neu. Danach pflegst du hier Mitglieder, Gruppen und Administratoren.</p>
+  {% endcall %}
+
+{% endif %}
+</div>
+{% endblock %}

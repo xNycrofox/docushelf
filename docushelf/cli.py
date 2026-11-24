@@ -597,6 +597,11 @@ def _uvicorn_server(config: Any) -> Any:
     return uvicorn.Server(config)
 
 
+def _request_stop(server: Any) -> None:
+    log.info("stopping for a restart requested in the web interface")
+    server.should_exit = True
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     settings = _load_settings(args, for_server=True)
     overrides: dict[str, Any] = {}
@@ -671,6 +676,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
             timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
         )
         server = _uvicorn_server(config)
+        # "Jetzt neu starten" in the settings: stop gracefully; the container's restart
+        # policy (or the service manager) starts the server again.
+        state = getattr(app, "state", None)
+        if state is not None:
+            state.restart_handler = lambda: _request_stop(server)
         log.info(
             "DocuShelf %s: data %s, archive %s, listening on %s:%d",
             __version__,

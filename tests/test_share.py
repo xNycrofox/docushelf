@@ -285,7 +285,7 @@ def test_share_page_for_a_logged_in_user(browser):
     assert "Bilder zu einem Dokument zusammenfügen" in html
     # Install help for Android and the Shortcut for iPhones.
     assert "App installieren" in html and "Zum Startbildschirm hinzufügen" in html
-    assert "DocuShelf senden" in html and 'href="/einstellungen#tokens"' in html
+    assert "DocuShelf senden" in html and 'href="/einstellungen/handy#tokens"' in html
     assert "contrib/ios/README.md" in html
     assert 'value="http://testserver"' in html
     assert '<meta name="csrf-token" content="' in html

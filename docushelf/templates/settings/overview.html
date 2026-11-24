@@ -1,0 +1,34 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_title %}Einstellungen{% endblock %}
+{% block settings_lead %}Was eingerichtet ist und wie es läuft. Jeder Bereich hat seine eigene Seite.{% endblock %}
+{% block settings_content %}
+<section class="stat-grid settings-stats" aria-label="Überblick">
+  <div class="stat"><span class="stat-value">{{ (stats.documents or 0)|number }}</span><span class="stat-label">Dokumente</span></div>
+  <div class="stat"><span class="stat-value">{{ (stats.pages or 0)|number }}</span><span class="stat-label">Seiten durchsuchbar</span></div>
+  <div class="stat"><span class="stat-value">{{ (stats.folders or 0)|number }}</span><span class="stat-label">Ordner</span></div>
+  <div class="stat"><span class="stat-value">{{ (counts.bereit or 0)|number }}</span><span class="stat-label">im Eingang</span></div>
+  <div class="stat{% if counts.fehler %} stat-alert{% endif %}"><span class="stat-value">{{ (counts.fehler or 0)|number }}</span><span class="stat-label">Fehler</span></div>
+</section>
+
+<ul class="overview-grid" role="list">
+  {% for card in cards %}
+  <li>
+    <a class="overview-card" href="{{ card.page.url }}">
+      <span class="overview-icon" aria-hidden="true">{{ icon(card.page.icon) }}</span>
+      <span class="overview-text">
+        <span class="overview-title">{{ card.page.label }}</span>
+        <span class="overview-desc">{{ card.page.description }}</span>
+        {% if card.status %}<span class="overview-status">{{ card.status }}</span>{% endif %}
+      </span>
+      {{ icon('chevron-right', 'overview-chevron') }}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+
+{% if not settings_admin %}
+<p class="hint settings-footnote">{{ icon('lock') }} Weitere Einstellungen – Eingangskanäle, KI, Anmeldung und mehr – sehen und ändern nur Administratoren.</p>
+{% endif %}
+{% endblock %}

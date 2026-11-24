@@ -273,7 +273,7 @@ def test_token_from_the_settings_page_ends_with_the_emergency_login(app_client, 
     html = _page(app_client, "/einstellungen")
     response = app_client.post("/einstellungen/tokens", data={"name": "Scanner-Skript", "csrf_token": csrf_of(html)}, follow_redirects=False)
     assert response.status_code == 303
-    token = re.search(r'value="(dsk_[^"]+)"', _page(app_client, "/einstellungen")).group(1)
+    token = re.search(r'value="(dsk_[^"]+)"', _page(app_client, "/einstellungen/handy")).group(1)
     assert services.tokens.list()[0]["method"] == "local"
     api = client_for(app)
     assert api.get("/api/v1/status", headers=bearer(token)).status_code == 200

@@ -2,9 +2,11 @@
 
 Everything is configured through environment variables (``DOCUSHELF_*``).
 Secrets can be passed as files with the ``_FILE`` suffix
-(``DOCUSHELF_OIDC_CLIENT_SECRET_FILE=/run/secrets/oidc``). Non-secret values
-may also live in ``<data>/config/settings.yaml`` (lower-case keys without the
-prefix); environment variables win.
+(``DOCUSHELF_OIDC_CLIENT_SECRET_FILE=/run/secrets/oidc``). Values may also live
+in ``<data>/config/settings.yaml`` (lower-case keys without the prefix, written
+by the settings pages of the web interface, see :mod:`docushelf.settings_file`);
+environment variables win. A secret in that file is referenced the same way
+(``llm_api_key_file: secrets/llm-api-key``, relative to ``config/``).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from .errors import ConfigError
 
 PREFIX = "DOCUSHELF_"
 HOUSEHOLDS_FILE = "households.yaml"
+SETTINGS_FILE = "settings.yaml"
 DEFAULT_HOUSEHOLD_NAME = "Zuhause"
 
 # Default for trusted reverse proxies: loopback and private networks (Docker,
@@ -372,11 +375,12 @@ def _split_list(value: str) -> tuple[str, ...]:
 
 
 class _Source:
-    """Looks a key up in env (with optional _FILE) and then in settings.yaml."""
+    """Looks a key up in env (with optional _FILE) and then in settings.yaml (with optional _file)."""
 
-    def __init__(self, env: Mapping[str, str], file_values: Mapping[str, Any]):
+    def __init__(self, env: Mapping[str, str], file_values: Mapping[str, Any], config_dir: Path | None = None):
         self.env = env
         self.file_values = file_values
+        self.config_dir = config_dir
 
     def raw(self, key: str) -> str | None:
         env_key = PREFIX + key.upper()
@@ -390,12 +394,25 @@ class _Source:
                 raise ConfigError(f"{file_key}: {exc}") from exc
         value = self.file_values.get(key.lower())
         if value is None:
-            return None
+            return self._file_reference(key)
         if isinstance(value, bool):
             return "true" if value else "false"
         if isinstance(value, (list, tuple)):
             return ",".join(str(v) for v in value)
         return str(value)
+
+    def _file_reference(self, key: str) -> str | None:
+        """``<key>_file`` in settings.yaml: a file holding the value (relative paths below ``config/``)."""
+        reference = self.file_values.get(key.lower() + "_file")
+        if reference is None or reference == "":
+            return None
+        path = Path(str(reference)).expanduser()
+        if not path.is_absolute() and self.config_dir is not None:
+            path = self.config_dir / path
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ConfigError(f"{SETTINGS_FILE}: {key.lower()}_file {reference} kann nicht gelesen werden ({exc.strerror or exc}).") from None
 
     def str(self, key: str, default: str | None = None) -> str | None:
         value = self.raw(key)
@@ -441,15 +458,24 @@ class _Source:
 
 
 def _load_settings_file(data_dir: Path) -> dict[str, Any]:
-    path = data_dir / "config" / "settings.yaml"
+    path = data_dir / "config" / SETTINGS_FILE
     if not path.exists():
         return {}
     try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"{SETTINGS_FILE} kann nicht gelesen werden: {exc.strerror or exc}") from exc
+    return parse_settings_text(text)
+
+
+def parse_settings_text(text: str) -> dict[str, Any]:
+    """The content of ``settings.yaml`` as a mapping with lower-case keys (ConfigError if invalid)."""
+    try:
+        loaded = yaml.safe_load(text) or {}
     except yaml.YAMLError as exc:
-        raise ConfigError(f"settings.yaml ist ungültig: {exc}") from exc
+        raise ConfigError(f"{SETTINGS_FILE} ist ungültig: {exc}") from exc
     if not isinstance(loaded, dict):
-        raise ConfigError("settings.yaml muss eine Zuordnung (key: value) enthalten")
+        raise ConfigError(f"{SETTINGS_FILE} muss eine Zuordnung (key: value) enthalten")
     return {str(k).lower(): v for k, v in loaded.items()}
 
 
@@ -525,11 +551,22 @@ def _load_llm(src: _Source) -> LlmConfig | None:
     )
 
 
-def load_settings(env: Mapping[str, str] | None = None, **overrides: Any) -> Settings:
-    """Build Settings from the environment (and settings.yaml)."""
+def load_settings(
+    env: Mapping[str, str] | None = None,
+    *,
+    file_values: Mapping[str, Any] | None = None,
+    **overrides: Any,
+) -> Settings:
+    """Build Settings from the environment (and settings.yaml).
+
+    ``file_values`` replaces the content of ``settings.yaml`` (already parsed,
+    lower-case keys); the settings pages use it to validate a change before
+    the file is written.
+    """
     env = dict(os.environ if env is None else env)
     data_dir = Path(env.get(PREFIX + "DATA_DIR") or "/data")
-    src = _Source(env, _load_settings_file(data_dir))
+    values = _load_settings_file(data_dir) if file_values is None else {str(k).lower(): v for k, v in file_values.items()}
+    src = _Source(env, values, data_dir / "config")
 
     archive_dir = Path(src.str("archive_dir") or str(data_dir / "archiv"))
     stable = src.float("stable_seconds", 5.0)

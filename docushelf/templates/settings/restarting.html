@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Neustart{% endblock %}
+{% block head %}<meta http-equiv="refresh" content="12;url={{ target }}"><link rel="stylesheet" href="{{ static_url('settings.css') }}">{% endblock %}
+{% block content %}
+<section class="restart-page" role="status">
+  <span class="restart-page-icon" aria-hidden="true">{{ icon('power') }}</span>
+  <h1>DocuShelf startet neu …</h1>
+  <p>Das dauert meist nur ein paar Sekunden. Diese Seite lädt sich danach von selbst neu{% if pending %} – dann gelten die neuen Werte für {% for t in pending %}„{{ t }}“{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}.</p>
+  <p><a class="btn" href="{{ target }}">{{ icon('refresh') }} Jetzt neu laden</a></p>
+  <p class="hint">Kommt DocuShelf nicht wieder, läuft es vermutlich ohne automatische Neustart-Regel. Dann bitte den Container bzw. Dienst von Hand starten.</p>
+</section>
+{% endblock %}

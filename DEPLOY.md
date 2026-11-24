@@ -31,6 +31,7 @@ Alle Namen und Adressen sind Beispiele – bitte durch die eigenen ersetzen:
 11. [Fehlersuche](#11-fehlersuche)
 12. [Sicherheit im Überblick](#12-sicherheit-im-überblick)
 13. [Mehrere Haushalte](#13-mehrere-haushalte)
+14. [Einstellungen in der Weboberfläche](#14-einstellungen-in-der-weboberfläche)
 
 ---
 
@@ -254,7 +255,7 @@ eintragen, `docker compose up -d`), beendet damit alle Sitzungen des Notfallzuga
 ### API-Tokens
 
 Für Skripte und Kurzbefehle (z. B. „Teilen → An DocuShelf senden“ auf dem iPhone). Am besten
-erstellt jede Person ihr Token selbst in der Oberfläche unter *Einstellungen → API-Tokens*. Ein
+erstellt jede Person ihr Token selbst in der Oberfläche unter *Einstellungen → Handy & Tokens*. Ein
 so erstelltes Token ist an das Konto gebunden: Es gilt nur, solange dieses Konto nach
 `DOCUSHELF_ALLOWED_USERS`/`_GROUPS` bzw. als Notfallzugang noch hinein dürfte.
 
@@ -281,7 +282,7 @@ nicht von selbst ab: verlorene Tokens deshalb sofort widerrufen.
 
 **Gerät verloren oder jemand verlässt den Haushalt:**
 
-1. Die Tokens der Person widerrufen (*Einstellungen → API-Tokens* oder `docushelf token revoke <ID>`).
+1. Die Tokens der Person widerrufen (*Einstellungen → Handy & Tokens* oder `docushelf token revoke <ID>`).
    Das ist auch für gebundene Tokens nötig, wenn die Person nur in Authentik aus der Gruppe
    entfernt wird: Ein Token kennt die Gruppen vom Zeitpunkt seiner Erstellung.
 2. Die Person aus der Gruppe in Authentik bzw. aus `DOCUSHELF_ALLOWED_USERS` nehmen
@@ -456,7 +457,7 @@ Mailanbieter funktioniert unabhängig vom VPN. Beide Wege können gleichzeitig e
 
 ### Eingangskanäle in der Weboberfläche (`channels.yaml`)
 
-Unter **Einstellungen → Eingangskanäle → Verwalten** (`/einstellungen/kanaele`) schalten Admins
+Unter **Einstellungen → Eingangskanäle** (`/einstellungen/kanaele`) schalten Admins
 die Kanäle eines Haushalts ein und aus und richten sie ein – ohne Neustart. Admins sind mit einem
 Haushalt das lokale Notfallkonto sowie die Konten aus `DOCUSHELF_ADMIN_USERS` und die Mitglieder
 der Gruppen aus `DOCUSHELF_ADMIN_GROUPS`; mit mehreren Haushalten die Admins aus Abschnitt 13
@@ -507,7 +508,7 @@ der Gruppen aus `DOCUSHELF_ADMIN_GROUPS`; mit mehreren Haushalten die Admins aus
 
 ### iPhone und iPad: Kurzbefehl ohne Mac
 
-Unter **Einstellungen → Handy & Tablet** gibt es für iPhone/iPad den Knopf
+Unter **Einstellungen → Handy & Tokens** gibt es für iPhone/iPad den Knopf
 **Kurzbefehl installieren** (`/kurzbefehl`, nur angemeldet), daneben die Serveradresse zum
 Kopieren und **Token für dieses Handy erstellen** (ein Token `iPhone-Kurzbefehl` für das eigene
 Konto, wird einmal angezeigt). Nutzer brauchen dafür keinen Mac. Der Betreiber stellt den
@@ -592,7 +593,7 @@ DocuShelf fragt nach strukturierter Ausgabe (JSON-Schema); Server, die das nicht
 automatisch den einfachen JSON-Modus. Der API-Schlüssel geht als Bearer-Token an den Server und
 wird nie angezeigt oder protokolliert.
 
-**Prüfen:** *Einstellungen → Sprachmodell (KI) → Verbindung testen* lässt das Modell einen
+**Prüfen:** *Einstellungen → KI → Verbindung testen* lässt das Modell einen
 eingebauten, erfundenen Beispielbrief einordnen und zeigt Antwort und Dauer. Im Protokoll jedes
 Eingangsdokuments steht, ob die KI etwas vorgeschlagen hat.
 
@@ -855,7 +856,7 @@ Protokoll je Dokument liegt in `eingang/fehler/<ID>/log.txt`. Nach einer Korrekt
 | Sammelablage: „Der Vorschlag hat sich inzwischen geändert“ | Die Vorschläge wurden nach dem Laden der Seite neu berechnet. Seite neu laden, prüfen, erneut ablegen. |
 | Dokument bearbeiten: „Die Datei wurde inzwischen geändert …“ | Jemand hat dieselbe Angabe zwischendurch geändert (in der App oder im Finder). Die eigenen Eingaben stehen noch im Formular; prüfen und erneut speichern. |
 | Suche findet nichts mehr, Zahlen stimmen nicht | Index neu aufbauen (Abschnitt 10). Das ist immer gefahrlos. |
-| Kein KI-Vorschlag | Das Protokoll des Dokuments nennt den Grund. *Einstellungen → Verbindung testen*; Adresse und Modellname prüfen (`docker compose exec ollama ollama list`); auf einer langsamen CPU `DOCUSHELF_LLM_TIMEOUT` erhöhen. |
+| Kein KI-Vorschlag | Das Protokoll des Dokuments nennt den Grund. *Einstellungen → KI → Verbindung testen*; Adresse und Modellname prüfen (`docker compose exec ollama ollama list`); auf einer langsamen CPU `DOCUSHELF_LLM_TIMEOUT` erhöhen. |
 | Automatische Ablage legt nichts ab | `DOCUSHELF_AUTO_FILE` und `DOCUSHELF_AUTO_FILE_SOURCES` prüfen; jedes zurückgehaltene Dokument zeigt im Eingang „Nicht automatisch: …“ mit dem Grund. Im Modus `rules` braucht die Regel `auto: true`. |
 
 ## 12. Sicherheit im Überblick
@@ -1195,7 +1196,7 @@ Mail anhand der Empfängeradresse einem Haushalt zu (`smtp_recipients` in `house
   Haushalt erstellt, lädt immer in diesen Haushalt hoch – der iPhone-Kurzbefehl und das Android-Teilen
   landen also automatisch im richtigen Archiv, ohne dass der Haushalt angegeben werden muss. Das
   Token also im Haushalt erstellen, für den es gelten soll (in der Oberfläche den Haushalt
-  umschalten, dann *Einstellungen → API-Tokens*; auf der Kommandozeile mit `--haushalt`).
+  umschalten, dann *Einstellungen → Handy & Tokens*; auf der Kommandozeile mit `--haushalt`).
 
 ### Sicherung
 
@@ -1225,3 +1226,54 @@ Mit mehreren Haushalten verlangen alle Befehle, die auf Daten wirken (`status`, 
 `--household`); fehlt sie, nennt die Fehlermeldung die vorhandenen Kennungen. Ohne
 `households.yaml` ist die Angabe nie nötig. `serve`, `healthcheck`, `households` und
 `hash-password` brauchen sie nicht – `serve` bedient immer alle Haushalte.
+
+---
+
+## 14. Einstellungen in der Weboberfläche
+
+Fast alles, was in der `.env` steht, lässt sich auch im Browser unter **Einstellungen** pflegen –
+eine Seite pro Thema: Haushalte, Eingangskanäle, Ablage & Auto-Ablage, KI, Verarbeitung,
+Benachrichtigungen, Handy & Tokens, Anmeldung & Sicherheit, Protokoll und System.
+
+**Wer darf was?** Die Übersicht, *Handy & Tokens* (eigene Tokens, Kurzbefehl, Android-Hilfe),
+das *Protokoll* und Index/Abgleich unter *System* sieht jede angemeldete Person. Alles, was die
+ganze Installation betrifft, sehen und ändern nur Admins: der lokale Notfallzugang,
+`DOCUSHELF_ADMIN_USERS` / `DOCUSHELF_ADMIN_GROUPS` und – mit mehreren Haushalten – `admins:` /
+`admin_groups:` aus `households.yaml`.
+
+**Wohin wird gespeichert?**
+
+| Was | Datei |
+|---|---|
+| Einstellungen der Installation | `<daten>/config/settings.yaml` (vorige Fassung: `settings.yaml.bak`) |
+| Automatische Ablage, Namen, Benachrichtigungen eines Haushalts (bei mehreren Haushalten) | sein Eintrag in `households.yaml` (`.bak` daneben) |
+| Mitglieder, Gruppen, Admins, Name eines Haushalts | `households.yaml` |
+| Postfächer, Scan-Adressen, Scanner- und Watch-Ordner | `<haushalt>/config/channels.yaml` |
+| Geheimnisse (OIDC-Client-Secret, API-Schlüssel des Sprachmodells, SMTP-Passwort, IMAP-Passwörter) | `config/secrets/…` (Datei 600, Ordner 700), in `settings.yaml` nur als `…_file: secrets/…` |
+
+Jede Änderung wird vor dem Schreiben mit demselben Lader geprüft wie beim Start – eine Eingabe,
+mit der DocuShelf nicht mehr starten würde, wird abgelehnt. Jede Änderung steht im Protokoll
+(„Einstellungen geändert“), Geheimnisse werden nie angezeigt und nie protokolliert.
+
+**Umgebungsvariablen haben Vorrang.** Ist ein Wert in der `.env` gesetzt, zeigt die Seite ihn
+gesperrt mit „festgelegt über Umgebungsvariable DOCUSHELF_…“. Wer etwas lieber im Browser
+pflegt, nimmt die Zeile aus der `.env` und startet neu.
+
+**Sofort oder nach dem Neustart?** Automatische Ablage, Benachrichtigungs-Adresse, Namen im
+Haushalt, Papierkorb- und Aufbewahrungsfristen, Haushaltsmitglieder und alle Eingangskanäle
+gelten sofort. Alles andere (KI, Texterkennung, Anmeldung, Zeitzone …) wirkt nach einem Neustart;
+bis dahin zeigt jede Einstellungsseite „Neustart nötig, damit … wirkt“ mit dem Knopf
+**Jetzt neu starten**. Er beendet DocuShelf sauber; die Neustart-Regel des Containers
+(`restart: unless-stopped` in `compose.yaml`) startet es wieder. Ohne eine solche Regel (z. B.
+`docushelf serve` von Hand oder ein systemd-Dienst mit `Restart=on-failure`) muss es danach von
+Hand bzw. mit `Restart=always` gestartet werden.
+
+**Aussperren verhindern.** Die Abschnitte unter *Anmeldung & Sicherheit* speichern erst nach
+einem Haken „Ich habe geprüft, dass ich mich danach noch anmelden kann“. Abgelehnt wird außerdem,
+was die Anmeldung ganz abschalten würde (kein Anmeldedienst und kein Notfallzugang), was dich als
+SSO-Konto aussperren oder dir selbst die Administratorrechte nehmen würde. Der Notfallzugang
+selbst lässt sich bewusst nur über `DOCUSHELF_ADMIN_PASSWORD_HASH` ändern.
+
+**Notfall:** Startet DocuShelf nach einer Änderung nicht mehr (etwa wegen einer von Hand
+bearbeiteten Datei), `config/settings.yaml.bak` zurück nach `settings.yaml` kopieren oder den
+störenden Eintrag löschen – ohne Eintrag gilt der Standardwert.

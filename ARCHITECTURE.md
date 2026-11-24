@@ -43,6 +43,14 @@ Standard 1), damit mehrere Haushalte die Maschine nicht gemeinsam überlasten.
   (Zustand, Analyse, Vorschläge), `original/` (unverändert), `document.pdf` (Ergebnis) und
   `log.txt`. Auch der Eingang lebt damit vollständig im Dateisystem.
 - **Regeln, Tokens, Einstellungen**: lesbare YAML-Dateien in `config/`.
+- **Einstellungen aus der Oberfläche**: Was Admins im Browser ändern, landet in `config/settings.yaml`
+  (Haushaltswerte in `households.yaml`, Kanäle in `channels.yaml`), Geheimnisse getrennt in
+  `config/secrets/`. Umgebungsvariablen gewinnen weiterhin; eine Änderung wird vor dem Schreiben mit
+  dem Start-Lader geprüft, damit eine Eingabe im Browser den nächsten Start nie verhindern kann. Was
+  ohne Neustart sicher übernommen werden kann (automatische Ablage, Benachrichtigungen, Fristen,
+  Kanäle), gilt sofort; alles andere erst nach „Jetzt neu starten“ – ein sauberes Beenden, das die
+  Neustart-Regel des Containers auffängt. Ein Neuladen im laufenden Prozess hätte für Login, OCR
+  oder Worker-Threads viele halbe Zustände bedeutet.
 - **Haushalte**: optional `config/households.yaml` (siehe unten). Jeder Haushalt hat darunter
   den ganzen Baum (Archiv, Eingang, Papierkorb, Config, Protokoll, Index) in einem eigenen
   Verzeichnis, standardmäßig `haushalte/<id>/`.

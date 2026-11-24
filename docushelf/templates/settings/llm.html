@@ -1,0 +1,49 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_lead %}Ein Sprachmodell macht die Vorschläge im Eingang besser. Es ist freiwillig: ohne KI schlägt DocuShelf aus Regeln und ähnlichen Dokumenten vor.{% endblock %}
+{% block settings_content %}
+<div class="settings-stack">
+  {% call s.info_card('status', 'Verbindung', 'refresh', 'So läuft das Sprachmodell gerade.') %}
+  {% if llm.enabled %}
+  <dl class="kv">
+    <div><dt>Anbieter</dt><dd>{{ llm.provider_label }}</dd></div>
+    <div><dt>Endpunkt</dt><dd><span class="mono break">{{ llm.endpoint or '–' }}</span>{% if llm.local %} <span class="badge badge-muted">im lokalen Netz</span>{% elif llm.local is not none %} <span class="badge badge-warn" data-llm-remote>nicht lokal</span>{% endif %}</dd></div>
+    <div><dt>Modell</dt><dd class="mono">{{ llm.model }}</dd></div>
+    {% if llm.api_key %}<div><dt>API-Schlüssel</dt><dd>hinterlegt</dd></div>{% endif %}
+    {% if llm.context_tokens %}<div><dt>Kontext</dt><dd>{{ llm.context_tokens|number }} Tokens</dd></div>{% endif %}
+    {% if llm.timeout %}<div><dt>Zeitlimit</dt><dd>{{ llm.timeout }} s pro Anfrage</dd></div>{% endif %}
+  </dl>
+  {% else %}
+  <p>{{ s.status(false, '', 'ausgeschaltet') }}</p>
+  <p class="hint">Vorschläge kommen derzeit aus Regeln und ähnlichen Dokumenten.</p>
+  {% endif %}
+  {% if can_probe %}
+  <dl class="kv">
+    <div><dt>Erreichbar</dt><dd data-llm-status>
+      {% if probe_running and not probe %}<span class="muted">Test läuft …</span>
+      {% elif probe %}{{ s.status(probe.ok, 'ja', 'nein', bad=true) }} <span class="muted">geprüft {{ m.time_tag(probe.at) }}{% if probe.duration_s is not none %} · {{ probe.duration_s|seconds }}{% endif %}</span>{% if probe_running %} <span class="muted">· neuer Test läuft …</span>{% endif %}
+      {% else %}<span class="muted">noch nicht geprüft</span>{% endif %}
+    </dd></div>
+    {% if probe and probe.error %}<div><dt>Letzter Fehler</dt><dd class="text-danger break">{{ probe.error }}</dd></div>{% endif %}
+  </dl>
+  {% if probe_answer %}
+  <div class="probe-answer" data-llm-answer>
+    <p class="hint">Antwort auf den eingebauten Testbrief{% if probe.duration_s is not none %} nach {{ probe.duration_s|seconds }}{% endif %}:</p>
+    <dl class="kv kv-compact">
+      {% for row in probe_answer %}<div><dt>{{ row.label }}</dt><dd class="break">{{ row.value }}</dd></div>{% endfor %}
+    </dl>
+  </div>
+  {% endif %}
+  <form class="settings-actions settings-actions-start" method="post" action="/einstellungen/sprachmodell/testen" data-busy="Das Sprachmodell wird gefragt – das kann beim ersten Mal eine Weile dauern …">
+    {{ m.csrf() }}
+    <button class="btn" type="submit"{% if probe_running %} disabled{% endif %}>{{ icon('refresh') }} Verbindung testen</button>
+    {% if probe_target %}<span class="hint">Getestet wird die gespeicherte Einstellung ({{ probe_target.provider_label }} · <span class="mono">{{ probe_target.model }}</span>), auch vor dem Neustart.</span>{% endif %}
+  </form>
+  {% endif %}
+  {% if llm.enabled %}<p class="hint">{% if llm.local is sameas false %}<strong>Achtung:</strong> {% endif %}Für Vorschläge und die automatische Ablage geht der Text der Dokumente an diesen Endpunkt. Sollen Dokumente das Haus nicht verlassen, nimm einen Dienst im eigenen Netz (z. B. Ollama).</p>{% endif %}
+  {% endcall %}
+
+  {% for v in sections %}{{ s.section_card(v) }}{% endfor %}
+</div>
+{% endblock %}

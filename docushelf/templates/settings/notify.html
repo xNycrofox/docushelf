@@ -1,0 +1,24 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_lead %}Meldungen aufs Handy, wenn etwas schiefgeht oder ein Dokument automatisch abgelegt wurde.{% endblock %}
+{% block settings_content %}
+<div class="settings-stack">
+  {% for v in sections %}
+  {% call s.section_card(v) %}
+  <dl class="kv settings-facts">
+    <div><dt>Gesendet wird</dt><dd>bei Fehlern in der Verarbeitung{% if auto.enabled and auto.notify %} und für jedes automatisch abgelegte Dokument{% elif auto.enabled %} <span class="muted">(automatische Ablage meldet sich nicht – siehe Ablage)</span>{% endif %}</dd></div>
+    <div><dt>Derzeit</dt><dd>{% if notify_url %}{{ s.status(true, 'an') }} <span class="mono muted">{{ notify_host }}</span>{% else %}{{ s.status(false) }}{% endif %}</dd></div>
+  </dl>
+  {% endcall %}
+  {% endfor %}
+
+  {% call s.info_card('test', 'Ausprobieren', 'bell', 'Schickt eine kurze Testnachricht an die gespeicherte Adresse.') %}
+  <form class="settings-actions settings-actions-start" method="post" action="/einstellungen/benachrichtigungen/testen" data-busy="Wird gesendet …">
+    {{ m.csrf() }}
+    <button class="btn" type="submit"{% if not notify_url %} disabled{% endif %}>{{ icon('bell') }} Test-Benachrichtigung senden</button>
+    {% if not notify_url %}<span class="hint">Erst eine Adresse speichern.</span>{% endif %}
+  </form>
+  {% endcall %}
+</div>
+{% endblock %}

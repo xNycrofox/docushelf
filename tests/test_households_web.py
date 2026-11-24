@@ -225,10 +225,11 @@ def test_trash_rules_tokens_audit_and_automatic_filings_stay_apart(two):
     assert api(anna, "DELETE", f"/api/v1/tokens/{two.db.token_id}").status_code == 404
     assert two.b.tokens.verify(two.db.token) is not None
 
-    settings = anna.get("/einstellungen").text
+    settings = anna.get("/einstellungen/handy").text
     assert "Alphaversicherung-Telefon" in settings and "Betakasse-Telefon" not in settings
-    assert "Familie A" in settings and "Gruppen: familie-a" in settings
+    assert "Familie A" in settings
     assert "Eltern" not in settings and "haushalte/eltern" not in settings
+    assert anna.get("/einstellungen/haushalte").status_code == 403
 
     audit = anna.get("/api/v1/audit").text
     assert two.da.auto.id in audit and two.db.auto.id not in audit
@@ -363,7 +364,7 @@ def test_a_token_stops_working_when_its_owner_leaves_the_household(two):
     anna = browser(two, "anna")
     response = anna.post("/einstellungen/tokens", data={"csrf_token": csrf(anna), "name": "Annas Handy"}, follow_redirects=False)
     assert response.status_code == 303
-    secret = anna.get("/einstellungen").text
+    secret = anna.get("/einstellungen/handy").text
     token = re.search(r"dsk_[A-Za-z0-9_\-]{20,}", secret)
     assert token, "the new token is shown once"
     client = client_for(two.app)
@@ -432,9 +433,9 @@ def test_local_emergency_account_may_use_every_household(two):
     assert two.db.item.id in admin.get("/eingang").text
     assert admin.get(f"/api/v1/documents/{two.db.doc.id}").status_code == 200
     assert admin.get(f"/api/v1/documents/{two.da.doc.id}").status_code == 404
-    settings = admin.get("/einstellungen").text
-    assert "Eltern" in settings and "Benutzer: opa" in settings and "Gruppen: eltern" in settings
-    assert str(two.b.layout.data) in settings
+    settings = admin.get("/einstellungen/haushalte").text
+    assert "Eltern" in settings and 'name="user" value="opa"' in settings and 'name="group" value="eltern"' in settings
+    assert str(two.b.layout.data) in settings and "du arbeitest gerade hier" in settings
 
 
 # ---------------------------------------------------------------------------

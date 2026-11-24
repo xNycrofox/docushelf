@@ -449,6 +449,7 @@ a.chip-tag:hover { background: var(--highlight); color: #3d2c00; }
 .alert-link { align-items: center; color: var(--text); text-decoration: none; transition: transform .15s var(--ease), box-shadow .15s; }
 .alert-link:hover { color: var(--text); transform: translateY(-1px); box-shadow: var(--shadow); }
 .alert-cta { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; color: var(--danger); font-weight: 660; white-space: nowrap; }
+.alert-info .alert-cta { color: var(--accent-text); }
 .alert-refresh { align-items: center; animation: slide-in .35s var(--ease); }
 .alert-refresh .btn { margin-left: auto; }
 

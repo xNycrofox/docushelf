@@ -1,17 +1,10 @@
-{% extends "base.html" %}
+{% extends "settings/_base.html" %}
 {% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
 {% import "_channel_macros.html" as ch with context %}
-{% block title %}Eingangskanäle{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ static_url('channels.css') }}">{% endblock %}
-{% block content %}
-<div class="page-head">
-  <div>
-    <a class="back-link" href="/einstellungen">{{ icon('chevron-left') }} Einstellungen</a>
-    <h1>Eingangskanäle</h1>
-    <p class="page-sub">Wie Dokumente in den Eingang{% if channel_household and multi %} von <strong>{{ channel_household.name }}</strong>{% endif %} kommen: Postfächer, Scan per Mail, Scanner-Ordner und überwachte Ordner. Änderungen gelten sofort – ohne Neustart.</p>
-  </div>
-</div>
-
+{% block settings_head %}<link rel="stylesheet" href="{{ static_url('channels.css') }}">{% endblock %}
+{% block settings_lead %}Wie Dokumente in den Eingang{% if channel_household and multi %} von <strong>{{ channel_household.name }}</strong>{% endif %} kommen: Postfächer, Scan per Mail, Scanner-Ordner und überwachte Ordner. Änderungen an den Kanälen gelten sofort – ohne Neustart.{% endblock %}
+{% block settings_content %}
 {% if from_file %}
 <p class="hint channel-source">Gespeichert in <span class="mono break">{{ store_path }}</span>; die vorige Fassung liegt jeweils als <span class="mono">channels.yaml.bak</span> daneben. Passwörter stehen getrennt in <span class="mono">config/secrets/</span>.</p>
 {% else %}
@@ -25,7 +18,7 @@
 <datalist id="channel-members">{% for name in members %}<option value="{{ name }}"></option>{% endfor %}</datalist>
 {% endif %}
 
-<div class="channel-stack">
+<div class="settings-stack channel-stack">
 
 <section class="card" id="upload" aria-labelledby="upload-title">
   <div class="card-head"><h2 id="upload-title">{{ icon('upload') }} Hochladen</h2>{{ ch.state(true, 'immer an') }}</div>
@@ -258,6 +251,7 @@
   </div>
 </section>
 
+{% for v in sections %}{{ s.section_card(v) }}{% endfor %}
 </div>
 <script type="module" src="{{ static_url('channels.js') }}"></script>
 {% endblock %}

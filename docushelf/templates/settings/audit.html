@@ -1,0 +1,56 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_lead %}Wer wann was getan hat{% if current_household %} – im Haushalt <strong>{{ current_household.name }}</strong>{% endif %}. Das Protokoll liegt als Textdatei im Datenordner und überlebt jeden Neuaufbau des Index.{% endblock %}
+{% block settings_content %}
+<div class="settings-stack">
+  <form class="card settings-card audit-filters" method="get" action="/einstellungen/protokoll" role="search" aria-label="Protokoll filtern">
+    <div class="audit-filter-grid">
+      <div class="field">
+        <label for="audit-action">Was</label>
+        <select id="audit-action" class="select" name="aktion">
+          <option value="">alles</option>
+          {% for label in action_labels %}<option value="{{ label }}"{% if filters.aktion == label %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="audit-who">Wer</label>
+        <input id="audit-who" class="input" type="search" name="wer" value="{{ filters.wer }}" placeholder="Benutzer" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="audit-text">Enthält</label>
+        <input id="audit-text" class="input" type="search" name="suche" value="{{ filters.suche }}" placeholder="z. B. Stromrechnung" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="audit-period">Zeitraum</label>
+        <select id="audit-period" class="select" name="zeitraum">
+          {% for key, label in periods %}<option value="{{ key }}"{% if filters.zeitraum == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="settings-actions settings-actions-start">
+      <button class="btn btn-primary" type="submit">{{ icon('filter') }} Filtern</button>
+      {% if filtered %}<a class="btn btn-ghost" href="/einstellungen/protokoll">Filter zurücksetzen</a>{% endif %}
+    </div>
+  </form>
+
+  {% if error %}<div class="alert alert-error" role="alert">{{ icon('alert-circle') }}<p>{{ error }}</p></div>{% endif %}
+
+  <section class="card settings-card" aria-label="Einträge">
+    {% if rows %}
+    <ol class="audit-list">
+      {% for a in rows %}
+      <li class="audit-item">
+        <span class="audit-when">{{ m.time_tag(a.at) }}</span>
+        <span class="audit-what"><strong>{{ a.label }}</strong>{% if a.details %} <span class="audit-details break">{{ a.details }}</span>{% endif %}</span>
+        <span class="audit-who">{{ icon('user') }}{{ a.user }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% if more %}<div class="settings-actions settings-actions-center"><a class="btn" href="{{ more_url }}">Ältere Einträge zeigen</a></div>{% endif %}
+    {% else %}
+    <p class="muted settings-empty">{{ 'Keine Einträge passen zu diesem Filter.' if filtered else 'Noch keine Einträge in diesem Zeitraum.' }}</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

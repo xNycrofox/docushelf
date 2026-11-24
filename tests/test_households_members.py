@@ -125,19 +125,21 @@ def file_data(setup):
 
 
 def test_admins_see_the_section_and_others_do_not(setup):
-    page = admin(setup).get("/einstellungen").text
-    assert 'id="haushalte"' in page
+    page = admin(setup).get("/einstellungen/haushalte").text
+    assert 'id="administratoren"' in page
     assert "/einstellungen/haushalte/familie-a/mitglieder" in page
     assert "/einstellungen/haushalte/eltern/mitglieder/entfernen" in page
     assert 'name="user" value="opa"' in page
-    assert "Gruppen kommen aus dem Anmeldedienst" in page and "Kommentare in der Datei gehen" in page
+    assert "/einstellungen/haushalte/eltern/gruppen" in page and "Kommentare in der Datei gehen" in page
 
     berta, _ = sso(setup, "berta")  # listed as "Berta" under admins
-    assert 'id="haushalte"' in berta.get("/einstellungen").text
+    assert 'id="administratoren"' in berta.get("/einstellungen/haushalte").text
 
     anna, _ = sso(setup, "anna")
-    page = anna.get("/einstellungen").text
-    assert 'id="haushalte"' not in page and "/mitglieder" not in page
+    response = anna.get("/einstellungen/haushalte")
+    assert response.status_code == 403
+    assert 'id="administratoren"' not in response.text and "/mitglieder" not in response.text
+    assert "/einstellungen/haushalte" not in anna.get("/einstellungen").text
 
 
 def test_non_admins_get_403_and_nothing_changes(setup):
@@ -164,7 +166,7 @@ def test_admins_from_the_environment(env, data_dir, monkeypatch):
     try:
         assert data.settings.admin_users == ("nobody", "carl@example.test")
         carl, _ = sso(data, "carl")  # matched by e-mail address
-        assert 'id="haushalte"' in carl.get("/einstellungen").text
+        assert 'id="administratoren"' in carl.get("/einstellungen/haushalte").text
         assert add(carl, "eltern", "carl").status_code == 303
         assert data.registry.get("eltern").users == ("opa", "carl")
     finally:
@@ -190,7 +192,7 @@ def test_single_household_hides_the_section(services):
 
     client = client_for(make_app(services))
     assert login_local(client).status_code == 303
-    assert 'id="haushalte"' not in client.get("/einstellungen").text
+    assert 'id="administratoren"' not in client.get("/einstellungen/haushalte").text
     response = add(client, "default", "someone")
     assert response.status_code == 404
 
@@ -203,8 +205,8 @@ def test_adding_a_member_writes_the_file_and_a_backup(setup):
     before = setup.path.read_text(encoding="utf-8")
     client = admin(setup)
     response = add(client, "eltern", "  Zoe@Example.test  ")
-    assert response.status_code == 303 and response.headers["location"] == "/einstellungen#haushalte"
-    page = client.get("/einstellungen").text
+    assert response.status_code == 303 and response.headers["location"] == "/einstellungen/haushalte#haushalt-eltern"
+    page = client.get("/einstellungen/haushalte").text
     assert "„Zoe@Example.test“ gehört jetzt zum Haushalt „Eltern“." in page
 
     data = file_data(setup)
@@ -231,7 +233,7 @@ def test_removing_a_member(setup):
     assert setup.registry.get("eltern").users == ()
     entry = setup.registry.services("eltern").audit.tail(1)[0]
     assert entry["action"] == "household_members" and entry["removed"] == "OPA"
-    assert "„OPA“ wurde aus dem Haushalt „Eltern“ entfernt." in client.get("/einstellungen").text
+    assert "„OPA“ wurde aus dem Haushalt „Eltern“ entfernt." in client.get("/einstellungen/haushalte").text
 
 
 @pytest.mark.parametrize(
@@ -249,7 +251,7 @@ def test_invalid_or_duplicate_input_changes_nothing(setup, value, message):
     client = admin(setup)
     response = add(client, "eltern", value)
     assert response.status_code == 303
-    assert message in client.get("/einstellungen").text
+    assert message in client.get("/einstellungen/haushalte").text
     assert setup.path.read_text(encoding="utf-8") == before
     assert not setup.path.with_name("households.yaml.bak").exists()
     assert setup.registry.get("eltern").users == ("opa",)
@@ -267,9 +269,9 @@ def test_a_member_may_be_in_several_households_and_200_chars_are_fine(setup):
 def test_removing_someone_not_listed_and_unknown_households(setup):
     client = admin(setup)
     assert remove(client, "eltern", "niemand").status_code == 303
-    assert "steht nicht (mehr) bei den Benutzern" in client.get("/einstellungen").text
+    assert "steht nicht (mehr) bei den Benutzern" in client.get("/einstellungen/haushalte").text
     assert add(client, "gibtsnicht", "x").status_code == 303
-    assert "gibt es nicht" in client.get("/einstellungen").text
+    assert "gibt es nicht" in client.get("/einstellungen/haushalte").text
     assert not setup.path.with_name("households.yaml.bak").exists()
 
 
@@ -278,7 +280,7 @@ def test_an_invalid_file_is_not_replaced(setup):
     setup.path.write_text(broken, encoding="utf-8")
     client = admin(setup)
     assert add(client, "eltern", "zoe").status_code == 303
-    page = client.get("/einstellungen").text
+    page = client.get("/einstellungen/haushalte").text
     assert "derzeit ungültig" in page and "grups" in page
     assert setup.path.read_text(encoding="utf-8") == broken
     assert not setup.path.with_name("households.yaml.bak").exists()
@@ -299,7 +301,7 @@ def test_a_result_that_fails_validation_is_not_written(setup, monkeypatch):
     monkeypatch.setattr(households_module, "parse_households", failing_second_time)
     client = admin(setup)
     assert add(client, "eltern", "zoe").status_code == 303
-    assert "geprüft und abgelehnt" in client.get("/einstellungen").text
+    assert "geprüft und abgelehnt" in client.get("/einstellungen/haushalte").text
     assert len(calls) == 2
     assert setup.path.read_text(encoding="utf-8") == before
     assert not setup.path.with_name("households.yaml.bak").exists()
@@ -311,7 +313,7 @@ def test_other_changes_to_the_file_survive_and_households_must_stay_the_same(set
     added = FILE_TEXT + "  - id: neu\n    name: Neu\n"
     setup.path.write_text(added, encoding="utf-8")
     assert add(client, "eltern", "zoe").status_code == 303
-    assert "neu starten" in client.get("/einstellungen").text
+    assert "neu starten" in client.get("/einstellungen/haushalte").text
     assert setup.path.read_text(encoding="utf-8") == added
 
     edited = FILE_TEXT.replace("groups: [eltern]", "groups: [eltern, enkel]")
@@ -376,11 +378,11 @@ def test_an_existing_session_becomes_admin_when_listed(setup):
     }
     anna = client_for(setup.app)
     anna.cookies.set(SESSION_COOKIE, signed_session(setup.app.state.session_secret, session), domain="testserver.local")
-    assert 'id="haushalte"' not in anna.get("/einstellungen").text
+    assert 'id="administratoren"' not in anna.get("/einstellungen/haushalte").text
     text = setup.path.read_text(encoding="utf-8").replace("admins: [Berta]", "admins: [Berta, anna]")
     setup.path.write_text(text, encoding="utf-8")
     assert add(admin(setup), "eltern", "zoe").status_code == 303  # reloads the admins as well
-    assert 'id="haushalte"' in anna.get("/einstellungen").text
+    assert 'id="administratoren"' in anna.get("/einstellungen/haushalte").text
 
 
 # ---------------------------------------------------------------------------
@@ -438,15 +440,15 @@ def group_setup(env, data_dir, monkeypatch):
 def test_members_of_an_admin_group_are_admins(group_setup):
     assert group_setup.registry.admin_groups == ("software-admins",)
     dora, _ = sso(group_setup, "dora")  # group spelled "Software-Admins" in the claim
-    page = dora.get("/einstellungen").text
-    assert 'id="haushalte"' in page
+    page = dora.get("/einstellungen/haushalte").text
+    assert 'id="administratoren"' in page
     assert add(dora, "eltern", "dora").status_code == 303
     assert group_setup.registry.get("eltern").users == ("opa", "dora")
     assert file_data(group_setup)["admin_groups"] == ["software-admins"]  # kept when the file is rewritten
     assert group_setup.registry.admin_groups == ("software-admins",)
 
     anna, _ = sso(group_setup, "anna")
-    assert 'id="haushalte"' not in anna.get("/einstellungen").text
+    assert 'id="administratoren"' not in anna.get("/einstellungen/haushalte").text
     assert add(anna, "eltern", "anna").status_code == 403
 
 
@@ -473,7 +475,7 @@ def test_admin_groups_from_the_environment(env, data_dir, monkeypatch):
         assert data.settings.admin_groups == ("software-admins", "andere")
         assert data.registry.admin_groups == ()
         dora, _ = sso(data, "dora")
-        assert 'id="haushalte"' in dora.get("/einstellungen").text
+        assert 'id="administratoren"' in dora.get("/einstellungen/haushalte").text
         assert add(dora, "eltern", "dora").status_code == 303
         anna, _ = sso(data, "anna")
         assert add(anna, "eltern", "anna").status_code == 403
@@ -484,13 +486,13 @@ def test_admin_groups_from_the_environment(env, data_dir, monkeypatch):
 
 def test_admin_groups_are_reloaded_with_a_member_change(setup):
     dora, _ = sso(setup, "dora")
-    assert 'id="haushalte"' not in dora.get("/einstellungen").text
+    assert 'id="administratoren"' not in dora.get("/einstellungen/haushalte").text
     text = setup.path.read_text(encoding="utf-8")
     text = text.replace("admins: [Berta]", "admins: [Berta]\nadmin_groups: [SOFTWARE-ADMINS]")
     setup.path.write_text(text, encoding="utf-8")
     assert add(admin(setup), "eltern", "zoe").status_code == 303
     assert setup.registry.admin_groups == ("software-admins",)
-    assert 'id="haushalte"' in dora.get("/einstellungen").text
+    assert 'id="administratoren"' in dora.get("/einstellungen/haushalte").text
 
 
 def test_admin_groups_entry_is_validated(env, data_dir):

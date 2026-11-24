@@ -1090,6 +1090,8 @@ AUDIT_LABELS = {
     "token_create": "API-Token erstellt",
     "token_revoke": "API-Token widerrufen",
     "household_members": "Haushaltsmitglieder geändert",
+    "settings_change": "Einstellungen geändert",
+    "restart": "Neustart angefordert",
     "auto_file": "Automatisch abgelegt",
     "auto_review": "Automatische Ablage geprüft",
 }
@@ -1117,13 +1119,14 @@ def audit_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
             details.append(str(path))
     if entry.get("name") and action in ("create_rule", "delete_rule", "token_create", "token_revoke"):
         details.append(f"„{entry.get('name')}“")
-    if action == "channels_change" and entry.get("summary"):
+    if action in ("channels_change", "settings_change", "restart") and entry.get("summary"):
         details.append(str(entry.get("summary")))
     if action == "household_members":
+        group = "Gruppe " if entry.get("field") == "groups" else ""
         if entry.get("added"):
-            details.append(f"hinzugefügt: {entry.get('added')}")
+            details.append(f"hinzugefügt: {group}{entry.get('added')}")
         if entry.get("removed"):
-            details.append(f"entfernt: {entry.get('removed')}")
+            details.append(f"entfernt: {group}{entry.get('removed')}")
     if entry.get("method") and action in ("login", "login_denied"):
         details.append("per SSO" if entry.get("method") == "oidc" else "lokal")
     for key, label in (

@@ -1,0 +1,150 @@
+{#- Building blocks of the settings pages. Import with:
+    {% import "settings/_macros.html" as s with context %} -#}
+{% import "_macros.html" as m with context %}
+
+{% macro status(ok, on='an', off='aus', bad=false) -%}
+{% if ok %}<span class="status status-ok"><span class="status-dot" aria-hidden="true"></span>{{ on }}</span>{% elif bad %}<span class="status status-bad"><span class="status-dot" aria-hidden="true"></span>{{ off }}</span>{% else %}<span class="status status-off"><span class="status-dot" aria-hidden="true"></span>{{ off }}</span>{% endif %}
+{%- endmacro %}
+
+{#- "Neustart nötig, damit … wirkt" with the button that restarts the server. -#}
+{% macro restart_banner() -%}
+<div class="restart-banner" role="status" id="neustart-hinweis">
+  <span class="restart-icon" aria-hidden="true">{{ icon('power') }}</span>
+  <div class="restart-text">
+    <p><strong>{{ restart_message }}</strong></p>
+    <p class="hint">Gespeichert ist schon alles. Bis zum Neustart läuft DocuShelf mit den bisherigen Werten weiter.</p>
+  </div>
+  {% if restart_available %}
+  <form method="post" action="/einstellungen/neustart" data-confirm="DocuShelf jetzt neu starten? Die Verarbeitung hält sauber an und läuft danach weiter. Die Seite ist ein paar Sekunden nicht erreichbar." data-confirm-ok="Neu starten" data-busy="DocuShelf startet neu …">
+    {{ m.csrf() }}
+    <input type="hidden" name="zurueck" value="{{ current_path }}">
+    <button class="btn btn-primary" type="submit">{{ icon('power') }} Jetzt neu starten</button>
+  </form>
+  {% else %}
+  <p class="hint restart-manual">Bitte den Container bzw. Dienst neu starten.</p>
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{#- A card with one form: the fields of a settings section and its save button.
+    The caller block (optional) is placed below the fields. -#}
+{% macro section_card(v) -%}
+{%- set sec = v.section %}
+<section class="card settings-card" id="{{ sec.key }}" aria-labelledby="{{ sec.key }}-title">
+  <header class="settings-card-head">
+    <div class="settings-card-title">
+      <h2 id="{{ sec.key }}-title">{{ icon(sec.icon) }} {{ sec.title }}</h2>
+      {% if sec.live %}<span class="badge badge-accent" title="Wird sofort übernommen">wirkt sofort</span>{% else %}<span class="badge badge-muted" title="Wird beim nächsten Start übernommen">nach Neustart</span>{% endif %}
+    </div>
+    <p class="settings-card-intro">{{ sec.intro }}</p>
+    {% if v.household %}<p class="settings-scope">{{ icon('building') }} <span>Gilt für den Haushalt <strong>{{ v.household.name }}</strong>.</span></p>{% endif %}
+  </header>
+  <form class="settings-form" method="post" action="{{ v.action }}">
+    {{ m.csrf() }}
+    {% if v.message %}
+    <div class="alert {{ 'alert-success' if v.ok else 'alert-error' }}" role="{{ 'status' if v.ok else 'alert' }}" data-settings-message>
+      {{ icon('check-circle' if v.ok else 'alert-circle') }}
+      <p>{{ v.message }}</p>
+    </div>
+    {% endif %}
+    <div class="form-grid">
+      {% for fv in v.fields %}{{ field_row(fv) }}{% endfor %}
+    </div>
+    {% if caller is defined %}{{ caller() }}{% endif %}
+    {% if sec.note %}<p class="hint settings-note">{{ sec.note }}</p>{% endif %}
+    <div class="settings-actions">
+      {% if v.all_locked %}
+      <p class="hint">Alle Werte dieses Abschnitts sind über Umgebungsvariablen festgelegt.</p>
+      {% else %}
+      {% if sec.confirm %}
+      <label class="checkbox settings-confirm"><input type="checkbox" name="bestaetigt" value="1" required> <span>{{ sec.confirm }}</span></label>
+      {% endif %}
+      <button class="btn btn-primary" type="submit">{{ icon('check') }} Speichern</button>
+      {% endif %}
+    </div>
+  </form>
+</section>
+{%- endmacro %}
+
+{% macro field_row(fv) -%}
+{%- set f = fv.field %}
+{%- set dis = ' disabled' if fv.locked else '' %}
+{%- set described = (fv.id ~ '-help') if (f.help or f.kind == 'list') else '' %}
+<div class="form-row form-row-{{ f.kind }}{% if fv.locked %} is-locked{% endif %}">
+  <div class="form-label">
+    {% if f.kind in ('radio', 'sources') %}
+    <span class="form-label-text" id="{{ fv.id }}-label">{{ f.label }}</span>
+    {% else %}
+    <label for="{{ fv.id }}">{{ f.label }}</label>
+    {% endif %}
+  </div>
+  <div class="form-control">
+    {% if f.kind == 'bool' %}
+    <label class="switch">
+      <input id="{{ fv.id }}" type="checkbox" name="{{ f.key }}" value="1" role="switch"{% if fv.value %} checked{% endif %}{{ dis }}{% if described %} aria-describedby="{{ described }}"{% endif %}>
+      <span class="switch-track" aria-hidden="true"></span>
+      <span class="switch-label switch-on">an</span><span class="switch-label switch-off">aus</span>
+    </label>
+    {% elif f.kind == 'radio' %}
+    <div class="option-list" role="radiogroup" aria-labelledby="{{ fv.id }}-label">
+      {% for key, label in f.choices %}
+      <label class="option"><input type="radio" name="{{ f.key }}" value="{{ key }}"{% if fv.value == key %} checked{% endif %}{{ dis }}> <span>{{ label }}</span></label>
+      {% endfor %}
+    </div>
+    {% elif f.kind == 'choice' %}
+    <select id="{{ fv.id }}" class="select" name="{{ f.key }}"{{ dis }}{% if described %} aria-describedby="{{ described }}"{% endif %}>
+      {% set known = f.choices|map('first')|list %}
+      {% if fv.value and fv.value not in known %}<option value="{{ fv.value }}" selected>{{ fv.value }}</option>{% endif %}
+      {% for key, label in f.choices %}<option value="{{ key }}"{% if fv.value == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% elif f.kind == 'sources' %}
+    <div class="check-grid" role="group" aria-labelledby="{{ fv.id }}-label">
+      {% for key, label in f.choices %}
+      <label class="checkbox"><input type="checkbox" name="{{ f.key }}" value="{{ key }}"{% if key in fv.value %} checked{% endif %}{{ dis }}> <span>{{ label }}</span></label>
+      {% endfor %}
+    </div>
+    <label class="visually-hidden" for="{{ fv.id }}-extra">Weitere Eingänge</label>
+    <input id="{{ fv.id }}-extra" class="input mono input-narrow" type="text" name="{{ f.key }}__extra" value="{{ fv.extra }}" placeholder="weitere, z. B. watch-nas" autocomplete="off"{{ dis }}>
+    {% elif f.kind in ('int', 'decimal', 'percent') %}
+    <div class="input-unit">
+      <input id="{{ fv.id }}" class="input{% if f.mono %} mono{% endif %}" type="text" inputmode="{{ 'numeric' if f.kind == 'int' and f.scale == 1 else 'decimal' }}" name="{{ f.key }}" value="{{ fv.value }}" autocomplete="off"{% if f.placeholder %} placeholder="{{ f.placeholder }}"{% endif %}{{ dis }}{% if described %} aria-describedby="{{ described }}"{% endif %}>
+      {% if f.unit %}<span class="input-unit-label">{{ f.unit }}</span>{% endif %}
+    </div>
+    {% elif f.kind in ('list', 'lines') %}
+    <textarea id="{{ fv.id }}" class="textarea textarea-short{% if f.mono %} mono{% endif %}" name="{{ f.key }}" rows="{{ 3 if f.kind == 'lines' else 2 }}" spellcheck="false"{% if f.placeholder %} placeholder="{{ f.placeholder }}"{% endif %}{{ dis }}{% if described %} aria-describedby="{{ described }}"{% endif %}>{{ fv.value }}</textarea>
+    {% elif f.kind == 'secret' %}
+    {% if fv.locked %}
+    <p class="secret-state">{{ status(true, 'gesetzt') }}</p>
+    {% elif fv.has_secret %}
+    <div class="secret-field">
+      <p class="secret-state">{{ status(true, 'gesetzt') }}</p>
+      <details class="secret-change">
+        <summary class="btn btn-small btn-ghost">{{ icon('edit') }} Ändern</summary>
+        <div class="secret-change-body">
+          <input id="{{ fv.id }}" class="input" type="password" name="{{ f.key }}" value="" maxlength="4096" autocomplete="new-password" placeholder="neuer Wert">
+          <label class="checkbox checkbox-small"><input type="checkbox" name="{{ f.key }}__entfernen" value="1"> <span>Gespeicherten Wert entfernen</span></label>
+        </div>
+      </details>
+    </div>
+    {% else %}
+    <input id="{{ fv.id }}" class="input" type="password" name="{{ f.key }}" value="" maxlength="4096" autocomplete="new-password" placeholder="nicht gesetzt"{% if described %} aria-describedby="{{ described }}"{% endif %}>
+    {% endif %}
+    {% else %}
+    <input id="{{ fv.id }}" class="input{% if f.mono %} mono{% endif %}" type="{{ 'url' if f.kind == 'url' else 'text' }}" name="{{ f.key }}" value="{{ fv.value }}" maxlength="{{ f.max_length }}" autocomplete="off" spellcheck="false"{% if f.placeholder %} placeholder="{{ f.placeholder }}"{% endif %}{{ dis }}{% if described %} aria-describedby="{{ described }}"{% endif %}>
+    {% endif %}
+    {% if f.help or f.kind == 'list' %}<p class="hint" id="{{ fv.id }}-help">{{ f.help }}{% if f.kind == 'list' %}{{ ' ' if f.help }}Mehrere durch Komma oder Zeilenumbruch trennen.{% endif %}</p>{% endif %}
+    {% if fv.locked %}<p class="lock-note">{{ icon('lock') }} festgelegt über Umgebungsvariable <span class="mono">{{ fv.locked }}</span></p>{% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{#- A read-only card: heading, short text and a definition list (rows: label/value). -#}
+{% macro info_card(id, title, icon_name, intro='') -%}
+<section class="card settings-card" id="{{ id }}" aria-labelledby="{{ id }}-title">
+  <header class="settings-card-head">
+    <div class="settings-card-title"><h2 id="{{ id }}-title">{{ icon(icon_name) }} {{ title }}</h2></div>
+    {% if intro %}<p class="settings-card-intro">{{ intro }}</p>{% endif %}
+  </header>
+  <div class="settings-card-body">{{ caller() }}</div>
+</section>
+{%- endmacro %}

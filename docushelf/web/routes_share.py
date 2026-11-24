@@ -390,7 +390,7 @@ async def shortcut_token(
 
 
 def _create_phone_token(request: Request, user: User) -> Response:
-    back = "/einstellungen#handy"
+    back = "/einstellungen/handy#handy"
     services = get_services(request)
     store = getattr(services, "tokens", None)
     if store is None:

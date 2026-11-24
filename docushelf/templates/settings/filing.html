@@ -1,0 +1,22 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_lead %}Wie Dokumente aus dem Eingang ins Archiv kommen und wie lange Gelöschtes aufbewahrt wird.{% endblock %}
+{% block settings_content %}
+<div class="settings-stack">
+  {% if auto.show_tabs %}
+  <a class="alert alert-info alert-link settings-callout" href="/eingang/automatisch">
+    {{ icon('wand') }}
+    <p>In den letzten 7 Tagen automatisch abgelegt: <strong>{{ plural(auto.recent, 'Dokument', 'Dokumente') }}</strong>{% if auto.pending %} · {{ auto.pending }} unsicher, bitte prüfen{% endif %}.</p>
+    <span class="alert-cta">Ansehen {{ icon('chevron-right') }}</span>
+  </a>
+  {% endif %}
+  {% for v in sections %}
+    {% if v.section.key == 'automatisch' and not llm.enabled %}
+      {% call s.section_card(v) %}<p class="hint settings-note">{{ icon('info') }} Das Sprachmodell ist aus – „Auf die KI warten“ wirkt erst, wenn es unter <a href="/einstellungen/ki">KI</a> eingeschaltet ist.</p>{% endcall %}
+    {% else %}
+      {{ s.section_card(v) }}
+    {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}

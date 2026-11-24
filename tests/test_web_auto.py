@@ -25,7 +25,7 @@ from docushelf.config import AutoFileConfig, LlmConfig, load_settings
 from docushelf.models import DocMeta, FilingRequest, ScanStats
 from docushelf.util.ids import new_doc_id
 from docushelf.util.timeutil import now
-from docushelf.web import routes_ui, security, templating, views
+from docushelf.web import routes_settings, routes_ui, security, templating, views
 from test_ui import (
     FakeIntake,
     FakePipeline,
@@ -41,6 +41,7 @@ from test_ui import (
 from web_support import client_for, login_local, make_app, session_data
 
 AUTO = AutoFileConfig(mode="confident", threshold=0.75)
+ADMIN = security.User(username="admin", name="Admin", email=None, groups=(), method="local")
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +100,12 @@ def svc(base_services, monkeypatch):
 @pytest.fixture
 def client(svc):
     with TestClient(build_app(svc), base_url="http://testserver") as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def admin_client(svc):
+    with TestClient(build_app(svc, ADMIN), base_url="http://testserver") as test_client:
         yield test_client
 
 
@@ -442,7 +449,7 @@ def test_empty_states_of_the_automatic_tab(client, svc, samples):
     assert "Noch nichts automatisch abgelegt" in html and 'aria-current="page"' in html
     svc.settings = svc.settings.with_overrides(auto_file=AutoFileConfig())
     html = page(client, "/eingang/automatisch")
-    assert "Automatische Ablage ist aus" in html and "DOCUSHELF_AUTO_FILE" in html and 'class="tabs"' not in html
+    assert "Automatische Ablage ist aus" in html and "/einstellungen/ablage#automatisch" in html and 'class="tabs"' not in html
     auto_filed(svc, samples, "A/2026-01-01 X.pdf")
     assert "Nichts zu prüfen" in page(client, "/eingang/automatisch?unsicher=1")
 
@@ -540,38 +547,43 @@ def test_navigation_dot_helper():
 # Settings
 
 
-def test_settings_sections(client, svc, samples):
+def test_settings_sections(admin_client, svc, samples):
+    client = admin_client
     auto_filed(svc, samples, "A/2026-01-01 X.pdf", confidence=0.5, review=True)
-    html = page(client, "/einstellungen")
-    auto = re.search(r'<section class="card" id="automatisch".*?</section>', html, re.S).group(0)
+    html = page(client, "/einstellungen/ablage")
+    auto = re.search(r'<section class="card settings-card" id="automatisch".*?</section>', html, re.S).group(0)
     text = text_of(auto)
-    for part in ("Automatische Ablage", "an sicher – automatisch ab 75 % Sicherheit", "Sicher ab 75 %", "Upload",
-                 "alle Watch-Ordner", "darf DocuShelf anlegen", "Sprachmodell ist aus",
-                 "an, aber keine Benachrichtigungs-Adresse eingerichtet", "1 Dokument · 1 unsicher", "DOCUSHELF_AUTO_FILE"):
+    for part in ("Automatische Ablage", "wirkt sofort", "Sicher ab", "Quellen", "Alle Watch-Ordner", "Neue Ordner",
+                 "Auf die KI warten", "Benachrichtigen"):
         assert part in text, part
-    llm = re.search(r'<section class="card" id="ki".*?</section>', html, re.S).group(0)
-    assert "Sprachmodell (KI)" in llm and "DOCUSHELF_LLM_ENABLED=true" in llm and "Verbindung testen" not in llm
-    mobile = re.search(r'<section class="card" id="handy".*?</section>', html, re.S).group(0)
-    assert "Handy &amp; Tablet" in mobile and "über „Teilen“" in mobile
+    assert 'value="off" checked' in auto and 'name="auto_file_threshold" value="75"' in auto
+    assert "In den letzten 7 Tagen automatisch abgelegt" in html and "1 unsicher" in html
+    assert "Das Sprachmodell ist aus" in text
+    llm = page(client, "/einstellungen/ki")
+    status = re.search(r'id="status".*?</section>', llm, re.S).group(0)
+    assert "ausgeschaltet" in status and "Verbindung testen" not in status
+    assert 'id="sprachmodell"' in llm and 'name="llm_api_key"' in llm
+    mobile = page(client, "/einstellungen/handy")
+    card = re.search(r'<section class="card settings-card" id="handy".*?</section>', mobile, re.S).group(0)
+    assert "Handy &amp; Tablet" in card and "über „Teilen“" in card
     if (templating.TEMPLATE_DIR / "_share_help.html").exists():
-        assert len(text_of(mobile)) > 200  # the help for Android and iPhone is included
+        assert len(text_of(card)) > 200  # the help for Android and iPhone is included
 
     svc.settings = svc.settings.with_overrides(
         auto_file=AutoFileConfig(mode="immer", threshold=0.6, sources=("upload", "mail"), new_folders=False, notify=False),
         llm=LlmConfig(url="https://api.example.com/v1", model="gpt-4o-mini", provider="openai", api_key="sk-geheim"),
     )
-    html = page(client, "/einstellungen")
-    text = text_of(re.search(r'id="automatisch".*?</section>', html, re.S).group(0))
-    assert "immer – alles wird abgelegt, unter 60 % zum Prüfen markiert" in text and "nein – nur vorhandene Ordner" in text
-    assert "Upload E-Mail" in text and "Watch" not in text and "ja – entschieden wird erst nach der Antwort der KI" in text
-    llm = re.search(r'id="ki".*?</section>', html, re.S).group(0)
-    assert "OpenAI-kompatibel" in llm and "https://api.example.com" in llm and "/v1" not in llm
-    assert "gpt-4o-mini" in llm and "hinterlegt" in llm and "sk-geheim" not in html
-    assert "data-llm-remote" in llm and "Achtung:" in llm and "noch nicht geprüft" in llm
-    assert 'action="/einstellungen/sprachmodell/testen"' in llm and "Verbindung testen" in llm
+    llm = page(client, "/einstellungen/ki")
+    status = re.search(r'id="status".*?</section>', llm, re.S).group(0)
+    assert "OpenAI-kompatibel" in status and "https://api.example.com" in status and "/v1" not in status
+    assert "gpt-4o-mini" in status and "hinterlegt" in status and "sk-geheim" not in llm
+    assert "data-llm-remote" in status and "Achtung:" in status and "noch nicht geprüft" in status
+    assert 'action="/einstellungen/sprachmodell/testen"' in status and "Verbindung testen" in status
+    assert "Das Sprachmodell ist aus" not in page(client, "/einstellungen/ablage")
 
 
-def test_language_model_connection_test(client, svc, monkeypatch):
+def test_language_model_connection_test(admin_client, svc, monkeypatch):
+    client = admin_client
     svc.settings = svc.settings.with_overrides(llm=LlmConfig(url="http://ollama:11434", model="qwen2.5:7b", timeout=30))
     answers = [{"ok": True, "provider": "ollama", "model": "qwen2.5:7b", "duration_s": 3.24,
                 "answer": {"ordner": "Wohnung/Strom", "titel": "Stromrechnung Stadtwerke Januar", "sicherheit": 0.9}, "error": None}]
@@ -579,17 +591,17 @@ def test_language_model_connection_test(client, svc, monkeypatch):
     monkeypatch.setattr(views, "probe_llm", lambda config: seen.append(config) or answers[-1])
 
     response = post(client, "/einstellungen/sprachmodell/testen")
-    assert response.headers["location"] == "/einstellungen#ki" and seen == [svc.settings.llm]
-    html = page(client, "/einstellungen")
+    assert response.headers["location"] == "/einstellungen/ki#status" and seen == [svc.settings.llm]
+    html = page(client, "/einstellungen/ki")
     assert "Das Sprachmodell antwortet (3,2 s)." in flash_texts(html)
-    llm = re.search(r'id="ki".*?</section>', html, re.S).group(0)
+    llm = re.search(r'id="status".*?</section>', html, re.S).group(0)
     assert "status-ok" in llm and ">ja" in llm and "im lokalen Netz" in llm and "8.192 Tokens" in llm
     assert "Wohnung/Strom" in llm and "Stromrechnung Stadtwerke Januar" in llm and "90 %" in llm
 
     answers.append({"ok": False, "provider": "ollama", "model": "qwen2.5:7b", "duration_s": 0.1, "answer": None,
                     "error": "Keine Verbindung zu http://ollama:11434"})
     post(client, "/einstellungen/sprachmodell/testen")
-    html = page(client, "/einstellungen")
+    html = page(client, "/einstellungen/ki")
     assert "Das Sprachmodell antwortet nicht: Keine Verbindung zu http://ollama:11434" in flash_texts(html)
     assert "Letzter Fehler" in html and "status-bad" in html
 
@@ -601,23 +613,23 @@ def test_language_model_connection_test(client, svc, monkeypatch):
         return answers[0]
 
     monkeypatch.setattr(views, "probe_llm", slow)
-    monkeypatch.setattr(routes_ui, "LLM_PROBE_WAIT", 0.05)
+    monkeypatch.setattr(routes_settings, "LLM_PROBE_WAIT", 0.05)
     post(client, "/einstellungen/sprachmodell/testen")
-    html = page(client, "/einstellungen")
+    html = page(client, "/einstellungen/ki")
     assert any("Der Test läuft weiter" in t for t in flash_texts(html))
     assert "neuer Test läuft" in html and re.search(r'<button class="btn" type="submit" disabled>', html)
     post(client, "/einstellungen/sprachmodell/testen")
-    assert any("Ein Test läuft noch" in t for t in flash_texts(page(client, "/einstellungen")))
+    assert any("Ein Test läuft noch" in t for t in flash_texts(page(client, "/einstellungen/ki")))
     gate.set()
     for _ in range(100):
         if not client.app.state.llm_probe.snapshot()[0]:
             break
         time.sleep(0.02)
-    assert "Wohnung/Strom" in page(client, "/einstellungen")
+    assert "Wohnung/Strom" in page(client, "/einstellungen/ki")
 
     svc.settings = svc.settings.with_overrides(llm=None)
     post(client, "/einstellungen/sprachmodell/testen")
-    assert any("ausgeschaltet" in t for t in flash_texts(page(client, "/einstellungen")))
+    assert any("ausgeschaltet" in t for t in flash_texts(page(client, "/einstellungen/ki")))
 
 
 # ---------------------------------------------------------------------------
@@ -720,7 +732,7 @@ def test_new_pages_with_the_real_service_container(real, samples, tmp_path):
     held = make_ready_item(real, samples, tmp_path)
     held.context["auto"] = {"decision": "hold", "confidence": 0.4, "reasons": ["unsicher (40 %)"]}
     real.inbox.save(held)
-    with TestClient(build_app(real)) as test_client:
+    with TestClient(build_app(real, ADMIN)) as test_client:
         for url in ("/eingang", "/eingang/automatisch", "/eingang/automatisch?unsicher=1", f"/eingang/{item.id}",
                     f"/eingang/{held.id}", f"/dokument/{record.id}", "/einstellungen", "/regeln", "/archiv",
                     "/archiv/Wohnung/Strom"):
@@ -730,7 +742,7 @@ def test_new_pages_with_the_real_service_container(real, samples, tmp_path):
         assert "Automatisch abgelegt (62 % – Ähnlichkeit, KI)" in page(test_client, f"/dokument/{record.id}")
         # The language model is not reachable here: the test says so instead of hanging.
         post(test_client, "/einstellungen/sprachmodell/testen")
-        settings_html = page(test_client, "/einstellungen")
+        settings_html = page(test_client, "/einstellungen/ki")
         assert any(t.startswith("Das Sprachmodell antwortet nicht") for t in flash_texts(settings_html))
         post(test_client, f"/eingang/automatisch/{record.id}/passt", {"after": f"/dokument/{record.id}"})
         assert "data-auto-notice" not in page(test_client, f"/dokument/{record.id}")

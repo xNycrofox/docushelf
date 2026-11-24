@@ -11,6 +11,32 @@ remains.
 Made for households and families, not as an enterprise DMS. An alternative to Paperless-ngx for
 everyone who thinks in folders. The user interface is German.
 
+## Screenshots
+
+![An inbox document with the page viewer, filing suggestions and the filing form](docs/screenshots/inbox-item.png)
+
+| | |
+|---|---|
+| ![Inbox with three documents waiting for confirmation, one held back by automatic filing](docs/screenshots/inbox.png) | ![Documents that DocuShelf filed on its own, each with confidence and reasons](docs/screenshots/auto-filings.png) |
+| Inbox: documents waiting with a suggested folder | Automatic filings with confidence, reasons and "Passt" |
+| ![Archive root with numbered folders as tiles](docs/screenshots/archive-tiles.png) | ![Folder of bank statements in the list view](docs/screenshots/archive-list.png) |
+| Archive: the folder tree on disk, as tiles | The same archive as a list, newest first |
+| ![Archived document with page preview and editable metadata](docs/screenshots/document.png) | ![Search for a misspelled word with hits and a "did you mean" hint](docs/screenshots/search.png) |
+| Document: preview, title, date, sender, tags, folder | Full-text search with typo correction ("Meintest du …?") |
+| ![Settings overview with status tiles and one card per topic](docs/screenshots/settings-overview.png) | ![Intake channels settings with scan-to-mail addresses and scanner folders](docs/screenshots/settings-channels.png) |
+| Settings: an overview and one page per topic | Intake channels: mailboxes, scan-to-mail, scanner and watch folders |
+| ![Household settings with admins, members and groups](docs/screenshots/settings-households.png) | ![Automatic filing settings with mode, threshold and sources](docs/screenshots/settings-filing.png) |
+| Households, members and admins | Automatic filing: mode, threshold, sources |
+| ![Inbox document in dark mode](docs/screenshots/dark-inbox-item.png) | ![Archived bank statement in dark mode](docs/screenshots/dark-document.png) |
+| Dark mode follows the system setting | Dark mode in the document view |
+
+<p>
+  <img src="docs/screenshots/mobile-inbox.png" alt="Inbox on a phone with document cards" width="260">
+  <img src="docs/screenshots/mobile-document.png" alt="Archived document on a phone" width="260">
+</p>
+
+All pictures show made-up sample data (Musterstadt, Mustermann and friends).
+
 ## Principles
 
 1. **Folders are the truth.** Every document is a file in a folder – no virtual folders in a
@@ -84,11 +110,23 @@ households and the network path from printer to server see **[DEPLOY.md](DEPLOY.
 
 ## Configuration
 
-Everything important is set through `DOCUSHELF_*` environment variables; the complete, commented
-list is in [`deploy/.env.example`](deploy/.env.example).
+Admins change almost everything in the browser under **Einstellungen** – one page per topic
+(households, intake channels, automatic filing, language model, processing, notifications,
+phone and tokens, login and security, audit log, system). The same values can be set through
+`DOCUSHELF_*` environment variables; the complete, commented list is in
+[`deploy/.env.example`](deploy/.env.example).
 
-- Secrets can be passed as files: `DOCUSHELF_OIDC_CLIENT_SECRET_FILE=/run/secrets/…`.
-- Non-secret values may also live in `<data>/config/settings.yaml`; environment variables win.
+- Environment variables win. A value set there is shown in the browser but locked
+  ("festgelegt über Umgebungsvariable …").
+- What is changed in the browser is written to `<data>/config/settings.yaml` (validated with the
+  start-up loader, previous version kept as `settings.yaml.bak`); values of a single household go
+  to its entry in `households.yaml`, channels to the household's `channels.yaml`.
+- Secrets never go into these files and are never shown again: they live in
+  `<data>/config/secrets/` (mode 600). From the environment they can be passed as files:
+  `DOCUSHELF_OIDC_CLIENT_SECRET_FILE=/run/secrets/…`.
+- Automatic filing, notifications, owner names, retention periods and the channels apply at once;
+  everything else shows "Neustart nötig" with a button that restarts the server (the container's
+  `restart: unless-stopped` brings it back).
 - Readable files in `<data>/config/`: `rules.yaml` (filing rules, editable in the UI),
   `tokens.yaml` (API tokens, hashes only), `households.yaml` (optional),
   `paperless-import.yaml` (folder mapping for the import).

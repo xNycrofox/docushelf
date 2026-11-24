@@ -1,0 +1,30 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_lead %}Wie man sich anmeldet und wer hinein darf. Ein Fehler hier kann alle aussperren – deshalb fragt jeder Abschnitt vor dem Speichern nach, und alles wirkt erst nach einem Neustart.{% endblock %}
+{% block settings_content %}
+<div class="settings-stack">
+  <div class="alert alert-warning">
+    {{ icon('alert') }}
+    <p>Bevor du hier etwas änderst: Prüfe, dass der lokale Notfallzugang funktioniert. Mit ihm kommst du auch dann noch hinein, wenn die Anmeldung über den Anmeldedienst nicht mehr klappt.</p>
+  </div>
+
+  {% call s.info_card('notfallzugang', 'Lokaler Notfallzugang', 'key', 'Ein Konto ohne Anmeldedienst, nur für den Notfall. Es lässt sich bewusst nicht in der Weboberfläche ändern.') %}
+  <dl class="kv">
+    <div><dt>Zustand</dt><dd>{% if local_enabled %}{{ s.status(true, 'aktiv') }} <span class="muted">Benutzer <span class="mono">{{ local_user }}</span></span>{% else %}{{ s.status(false, '', 'aus') }}{% endif %}</dd></div>
+    <div><dt>Festgelegt über</dt><dd><span class="mono">DOCUSHELF_ADMIN_USER</span> und <span class="mono">DOCUSHELF_ADMIN_PASSWORD_HASH</span> (Hash mit <span class="mono">docushelf hash-password</span>)</dd></div>
+    <div><dt>Du bist angemeldet</dt><dd>{% if you.method == 'oidc' %}per SSO als <span class="mono">{{ you.username }}</span>{% elif you.method == 'local' %}über den Notfallzugang{% else %}über einen Token{% endif %}</dd></div>
+  </dl>
+  {% endcall %}
+
+  {% for v in sections %}
+    {% if v.section.key == 'oidc' %}
+      {% call s.section_card(v) %}<p class="hint settings-note">Beim Anmeldedienst als Weiterleitungs-URL eintragen: <span class="mono break">{{ redirect_uri }}</span></p>{% endcall %}
+    {% elif v.section.key == 'sitzung' %}
+      {% call s.section_card(v) %}<p class="hint settings-note">Sitzungs-Cookies gehen derzeit {{ 'nur über HTTPS' if cookies_secure else 'auch über HTTP' }}. Alle abmelden: <span class="mono break">{{ secret_key_file }}</span> löschen und neu starten.</p>{% endcall %}
+    {% else %}
+      {{ s.section_card(v) }}
+    {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}

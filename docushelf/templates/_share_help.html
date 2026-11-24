@@ -60,7 +60,7 @@
       <button class="btn" type="submit">{{ icon('key') }} Token für dieses Handy erstellen</button>
     </form>
     {% endif %}
-    <p class="hint">Der Token hat dieselben Rechte wie du{% if household %} und gilt nur für den Haushalt {{ household.name }}{% endif %}. Geht das Gerät verloren, widerrufe ihn unter <a href="/einstellungen#tokens">Einstellungen → API-Tokens</a> („iPhone-Kurzbefehl“).</p>
+    <p class="hint">Der Token hat dieselben Rechte wie du{% if household %} und gilt nur für den Haushalt {{ household.name }}{% endif %}. Geht das Gerät verloren, widerrufe ihn unter <a href="/einstellungen/handy#tokens">Einstellungen → Handy &amp; Tokens</a> („iPhone-Kurzbefehl“).</p>
   </section>
 </div>
 <script type="module" src="{{ static_url('share.js') }}"></script>

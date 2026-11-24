@@ -999,17 +999,38 @@ def test_settings_page(client, svc, archive, samples, tmp_path):
     failed_item(svc, samples, tmp_path)
     svc.audit.write("alex", "file", title="Stromrechnung", path="Wohnung/Strom/x.pdf")
     html = get_page(client, "/einstellungen")
-    for text in ("Einstellungen", "Abgleich", "Jetzt abgleichen", "Index neu aufbauen", "Verarbeitung", "Texterkennung",
-                 "OCRmyPDF 16.0.0", "Eingangskanäle", "Upload", "Scanner (SMB)", "IMAP-Postfach", "API-Tokens",
-                 "Protokoll", "Abgelegt", "„Stromrechnung“", "Lokaler Notfallzugang"):
-        assert text in html, text
     assert re.search(r'class="stat-value">4</span><span class="stat-label">Dokumente', html)
-    assert "2 neu · 1 geändert" in html
+    # A member without admin rights sees the overview, the phone page, the audit log and the index.
+    for text in ("Einstellungen", "Handy &amp; Tokens", "Protokoll", "System", "nur Administratoren"):
+        assert text in html, text
+    assert "/einstellungen/ki" not in html and "/einstellungen/anmeldung" not in html
+    system = get_page(client, "/einstellungen/system")
+    for text in ("Index &amp; Abgleich", "Jetzt abgleichen", "Index neu aufbauen", "2 neu · 1 geändert"):
+        assert text in system, text
+    assert "Installation" not in system and "/einstellungen/neustart" not in system
+    audit = get_page(client, "/einstellungen/protokoll")
+    assert "Abgelegt" in audit and "„Stromrechnung“" in audit
+    assert client.get("/einstellungen/verarbeitung").status_code == 403
+
+
+def test_settings_pages_for_an_admin(svc, archive):
+    admin = security.User(username="admin", name="Admin", email=None, groups=(), method="local")
+    with TestClient(build_app(svc, admin), base_url="http://testserver") as test_client:
+        processing = get_page(test_client, "/einstellungen/verarbeitung")
+        for text in ("Texterkennung", "OCRmyPDF 16.0.0", "Leerseiten", "Leistung &amp; Grenzen"):
+            assert text in processing, text
+        overview = get_page(test_client, "/einstellungen")
+        for text in ("Eingangskanäle", "KI", "Anmeldung &amp; Sicherheit", "Verarbeitung"):
+            assert text in overview, text
+        login = get_page(test_client, "/einstellungen/anmeldung")
+        assert "Lokaler Notfallzugang" in login
+        system = get_page(test_client, "/einstellungen/system")
+        assert "Installation" in system and "Neu starten" in system
 
 
 def test_settings_actions(client, svc):
     response = post(client, "/einstellungen/abgleich")
-    assert response.headers["location"] == "/einstellungen" and svc.watcher.requests
+    assert response.headers["location"] == "/einstellungen/system" and svc.watcher.requests
     assert any("im Hintergrund" in t for t in flash_texts(get_page(client, "/einstellungen")))
 
     class Reconciler:
@@ -1028,14 +1049,14 @@ def test_settings_actions(client, svc):
 
 def test_tokens_are_shown_once(client, svc):
     response = post(client, "/einstellungen/tokens", {"name": "iPhone Kurzbefehl"})
-    assert response.headers["location"] == "/einstellungen#tokens"
-    page = client.get("/einstellungen")
+    assert response.headers["location"] == "/einstellungen/handy#tokens"
+    page = client.get("/einstellungen/handy")
     assert page.headers.get("cache-control") == "no-store"
     token = re.search(r'id="new-token-value" aria-label="Neuer API-Token"|value="(dsk_[^"]+)"', page.text)
     shown = re.search(r'value="(dsk_[^"]+)"', page.text)
     assert token and shown and svc.tokens.verify(shown.group(1)) is not None
     assert "iPhone Kurzbefehl" in page.text and "nur dieses eine Mal" in page.text
-    assert shown.group(1) not in client.get("/einstellungen").text  # gone on the next visit
+    assert shown.group(1) not in client.get("/einstellungen/handy").text  # gone on the next visit
     entry = svc.tokens.list()[0]
     assert svc.audit.tail(1)[0]["action"] == "token_create"
 
@@ -1052,8 +1073,9 @@ def test_pages_tolerate_missing_optional_components(svc):
     for name in ("tokens", "worker", "intake", "watcher"):
         delattr(svc, name)
     with TestClient(build_app(svc)) as test_client:
-        html = get_page(test_client, "/einstellungen")
-        assert "nicht verfügbar" in html
+        get_page(test_client, "/einstellungen")
+        assert "nicht verfügbar" in get_page(test_client, "/einstellungen/handy")
+        assert "nicht verfügbar" in get_page(test_client, "/einstellungen/system")
         get_page(test_client, "/eingang")
 
 

@@ -1,0 +1,63 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_lead %}Suchindex und Abgleich mit dem Archivordner{% if settings_admin %}, dazu Pfade, Versionen und der Neustart{% endif %}.{% endblock %}
+{% block settings_content %}
+<div class="settings-stack">
+  {% call s.info_card('index', 'Index & Abgleich', 'refresh', 'Der Abgleich übernimmt Änderungen, die per Explorer oder Finder im Archiv gemacht wurden. Der Index ist nur ein Zwischenspeicher – ein Neuaufbau liest alles frisch aus den Dateien.') %}
+  <dl class="kv">
+    <div><dt>Im Index</dt><dd>{{ plural(stats.documents or 0, 'Dokument', 'Dokumente') }} · {{ (stats.pages or 0)|number }} Seiten · {{ plural(stats.folders or 0, 'Ordner', 'Ordner') }}{% if stats.without_text %} · <span class="muted">{{ stats.without_text|number }} ohne Text</span>{% endif %}</dd></div>
+    <div><dt>Letzter Abgleich</dt><dd>{{ m.time_tag(stats.last_scan) or 'noch keiner' }}</dd></div>
+    <div><dt>Letzter Vollabgleich</dt><dd>{{ m.time_tag(stats.last_full_scan) or 'noch keiner' }} <span class="muted">· alle {{ (settings.reconcile_interval / 3600)|round(1)|string|replace('.0', '')|replace('.', ',') }} h und beim Start</span></dd></div>
+    {% if watcher %}
+    <div><dt>Dateiüberwachung</dt><dd>{{ s.status(watcher.running, 'läuft', 'gestoppt', bad=true) }}{% if watcher.polling %} <span class="muted">(Abfrage alle 60 s)</span>{% endif %}{% if watcher.scanning %} <span class="badge badge-accent">gleicht gerade ab</span>{% endif %}</dd></div>
+    {% if watcher.last_result %}
+    <div><dt>Ergebnis</dt><dd>{{ watcher.last_result.added }} neu · {{ watcher.last_result.updated }} geändert · {{ watcher.last_result.moved }} verschoben · {{ watcher.last_result.removed }} entfernt{% if watcher.last_result.errors %} · <span class="text-danger">{{ watcher.last_result.errors }} Fehler</span>{% endif %}</dd></div>
+    {% endif %}
+    {% if watcher.last_error %}<div><dt>Letzter Fehler</dt><dd class="text-danger">{{ watcher.last_error }}</dd></div>{% endif %}
+    {% else %}
+    <div><dt>Dateiüberwachung</dt><dd><span class="muted">nicht verfügbar</span></dd></div>
+    {% endif %}
+  </dl>
+  <div class="settings-actions settings-actions-start">
+    <form method="post" action="/einstellungen/abgleich">
+      {{ m.csrf() }}
+      <button class="btn" type="submit">{{ icon('refresh') }} Jetzt abgleichen</button>
+    </form>
+    <form method="post" action="/einstellungen/index-neu-aufbauen" data-confirm="Den Suchindex verwerfen und aus allen Dateien neu aufbauen? Das kann bei großen Archiven einige Minuten dauern; Dokumente und Ordner bleiben unberührt." data-confirm-ok="Neu aufbauen" data-busy="Index wird neu aufgebaut …">
+      {{ m.csrf() }}
+      <button class="btn btn-ghost" type="submit">{{ icon('database') }} Index neu aufbauen</button>
+    </form>
+  </div>
+  {% endcall %}
+
+  {% if settings_admin %}
+  {% call s.info_card('installation', 'Installation', 'archive', 'Wo DocuShelf seine Daten ablegt und welche Versionen laufen.') %}
+  <dl class="kv">
+    {% for row in versions %}<div><dt>{{ row.label }}</dt><dd class="mono">{{ row.value }}</dd></div>{% endfor %}
+    {% if multi %}<div><dt>Haushalte</dt><dd>{{ households_count }}</dd></div>{% endif %}
+  </dl>
+  <dl class="kv kv-paths">
+    {% for row in paths %}<div><dt>{{ row.label }}</dt><dd class="mono break">{{ row.value }}</dd></div>{% endfor %}
+  </dl>
+  <p class="hint">Sichern: <span class="mono">archiv/</span>, <span class="mono">eingang/</span>, <span class="mono">config/</span> und <span class="mono">protokoll/</span>. Den Index (<span class="mono">index/</span>) baut DocuShelf jederzeit neu auf.</p>
+  {% endcall %}
+
+  {% for v in sections %}{{ s.section_card(v) }}{% endfor %}
+
+  {% call s.info_card('neustart', 'Neu starten', 'power', 'Startet DocuShelf neu, damit gespeicherte Einstellungen wirken. Die Verarbeitung hält sauber an und läuft danach weiter.') %}
+  {% if restart_available %}
+  <form class="settings-actions settings-actions-start" method="post" action="/einstellungen/neustart" data-confirm="DocuShelf jetzt neu starten? Die Seite ist ein paar Sekunden nicht erreichbar." data-confirm-ok="Neu starten">
+    {{ m.csrf() }}
+    <input type="hidden" name="zurueck" value="/einstellungen/system">
+    <button class="btn{% if restart_pending %} btn-primary{% endif %}" type="submit">{{ icon('power') }} Jetzt neu starten</button>
+    <span class="hint">{% if restart_pending %}Wartet auf einen Neustart: {% for t in restart_pending %}„{{ t }}“{% if not loop.last %}, {% endif %}{% endfor %}.{% else %}Derzeit wartet nichts auf einen Neustart.{% endif %}</span>
+  </form>
+  <p class="hint">Im Container startet Docker DocuShelf danach von selbst wieder (Neustart-Regel <span class="mono">unless-stopped</span> in der compose.yaml). Ohne eine solche Regel musst du es selbst wieder starten.</p>
+  {% else %}
+  <p class="hint">DocuShelf läuft hier nicht über <span class="mono">docushelf serve</span> und kann sich nicht selbst neu starten. Bitte den Dienst bzw. Container von Hand neu starten.</p>
+  {% endif %}
+  {% endcall %}
+  {% endif %}
+</div>
+{% endblock %}

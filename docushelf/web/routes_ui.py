@@ -13,7 +13,6 @@ import logging
 import os
 import re
 import tempfile
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -25,7 +24,6 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 from ..errors import ConfigError, Conflict, DocuShelfError, NotFound, PathError
-from ..households import MAX_MEMBER_LENGTH
 from ..models import Analysis, MetadataUpdate
 from ..util.ids import is_item_id
 from ..util.names import check_relative, format_filename, sanitize_folder
@@ -51,13 +49,9 @@ ARCHIVE_SORTS = {
     "date_desc": "Neueste zuerst",
     "date_asc": "Älteste zuerst",
 }
-# How long the settings page waits for the language model test; a slower
-# answer is kept and shown on the next visit.
-LLM_PROBE_WAIT = 95.0
 DEFAULT_UPLOAD_EXTENSIONS = frozenset(
     {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heic", ".heif", ".webp", ".gif", ".bmp"}
 )
-NEW_TOKEN_KEY = "_new_token"
 
 # Managing API tokens needs a browser login; a token must not be able to mint more tokens.
 require_session_user = getattr(security, "require_session_user", require_user)
@@ -1646,166 +1640,6 @@ def _status_of(component: Any) -> dict[str, Any] | None:
     return dict(status) if isinstance(status, Mapping) else None
 
 
-def _sources(services: Any) -> list[dict[str, Any]]:
-    settings = services.settings
-    result = []
-    for source in settings.sources:
-        try:
-            path = source.path or services.layout.source_dir(source.name)
-        except Exception:
-            path = source.path
-        result.append(
-            {
-                "name": source.name,
-                "label": views.source_label(source.name),
-                "icon": views.source_icon(source.name),
-                "path": str(path) if path else "",
-                "stable_seconds": source.stable_seconds,
-                "external": source.path is not None,
-                "remove_after_import": source.remove_after_import,
-            }
-        )
-    return result
-
-
-@router.get("/einstellungen", response_class=HTMLResponse)
-def settings_page(request: Request, user: User = Depends(require_user)) -> HTMLResponse:
-    services = get_services(request)
-    settings = services.settings
-    try:
-        stats = dict(services.index.stats())
-    except Exception:
-        log.exception("cannot read index statistics")
-        stats = {}
-    tokens_store = getattr(services, "tokens", None)
-    tokens: list[dict[str, Any]] = []
-    if tokens_store is not None:
-        try:
-            tokens = [dict(t) for t in tokens_store.list()]
-        except Exception:
-            log.exception("cannot list API tokens")
-    for token in tokens:
-        token.pop("hash", None)
-    try:
-        audit_entries = [views.audit_entry(e) for e in services.audit.tail(40)]
-    except Exception:
-        audit_entries = []
-    new_token = None
-    session = request.scope.get("session")
-    if isinstance(session, dict) and NEW_TOKEN_KEY in session:
-        new_token = views.one_time.take(session.pop(NEW_TOKEN_KEY, None))
-    watcher = getattr(services, "watcher", None)
-    probe_running, probe = _llm_probe(request).snapshot()
-    smtp = _status_of(getattr(services, "smtp", None))
-    smtp_config = settings.smtp
-    smtp_recipients: list[str] = []
-    household = None
-    if security.multi_household(request):
-        # One SMTP receiver serves every household; mail is routed by recipient.
-        registry = security.get_registry(request)
-        smtp = _status_of(getattr(registry, "smtp", None))
-        smtp_config = getattr(request.app.state.settings, "smtp", None)
-        household = services.household
-        smtp_recipients = list(household.smtp_recipients)
-    response = render(
-        request,
-        "settings.html",
-        {
-            "user": user,
-            "stats": stats,
-            "counts": dict(services.inbox.counts()),
-            "watcher": _status_of(watcher),
-            "worker": _status_of(getattr(services, "worker", None)),
-            "intake": _status_of(getattr(services, "intake", None)),
-            "imap": _status_of(getattr(services, "imap", None)),
-            "smtp": smtp,
-            "smtp_config": smtp_config,
-            "smtp_recipients": smtp_recipients,
-            "current_household": household,
-            "ocr": _ocr_info(settings),
-            "settings": settings,
-            "sources": _sources(services),
-            "tokens": tokens,
-            "tokens_available": tokens_store is not None,
-            "new_token": new_token,
-            "audit": audit_entries,
-            "auto": _auto_overview(services),
-            "llm": views.llm_info(settings),
-            "probe": probe,
-            "probe_answer": views.probe_answer((probe or {}).get("answer")),
-            "probe_running": probe_running,
-            "member_admin": _member_overview(request, user),
-            "max_member_length": MAX_MEMBER_LENGTH,
-        },
-    )
-    if new_token:
-        response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-def _member_overview(request: Request, user: Any) -> list[dict[str, Any]] | None:
-    """Every household with its members for the admin section, or None (not an admin)."""
-    if not security.is_household_admin(request, user):
-        return None
-    registry = security.get_registry(request)
-    return [
-        {"id": h.id, "name": h.name, "users": list(h.users), "groups": list(h.groups)}
-        for h in registry.households
-    ]
-
-
-_probe_lock = threading.Lock()
-
-
-def _llm_probe(request: Request) -> views.LlmProbe:
-    """The connection test of this application (one per process, kept in the app state)."""
-    state = request.app.state
-    probe = getattr(state, "llm_probe", None)
-    if probe is None:
-        with _probe_lock:
-            probe = getattr(state, "llm_probe", None)
-            if probe is None:
-                probe = state.llm_probe = views.LlmProbe()
-    return probe
-
-
-@router.post("/einstellungen/sprachmodell/testen")
-async def settings_llm_test(request: Request, user: User = Depends(require_user), _csrf: Any = Depends(verify_csrf)) -> Response:
-    return await _with_form(request, _test_llm, user)
-
-
-def _test_llm(request: Request, form: Any, user: Any) -> Response:
-    """Classify a built-in sample letter with the configured model and show answer and duration."""
-    services = get_services(request)
-    config = getattr(services.settings, "llm", None)
-    back = "/einstellungen#ki"
-    if config is None:
-        flash(request, "Das Sprachmodell ist ausgeschaltet – es gibt nichts zu testen.", "info")
-        return redirect(back)
-    try:
-        configured = float(getattr(config, "timeout", LLM_PROBE_WAIT) or LLM_PROBE_WAIT)
-    except (TypeError, ValueError):
-        configured = LLM_PROBE_WAIT
-    # A little longer than one request may take, but never longer than a page should load.
-    wait = min(max(configured, 5.0) + 5.0, LLM_PROBE_WAIT)
-    status, result = _llm_probe(request).run(config, timeout=wait)
-    if status == "busy":
-        flash(request, "Ein Test läuft noch. Lade die Seite gleich neu, um das Ergebnis zu sehen.", "info")
-    elif status == "running":
-        flash(
-            request,
-            f"Nach {int(wait)} s kam noch keine Antwort – vielleicht wird das Modell gerade geladen. "
-            "Der Test läuft weiter; lade die Seite gleich neu, um das Ergebnis zu sehen.",
-            "warning",
-        )
-    elif result and result.get("ok"):
-        flash(request, f"Das Sprachmodell antwortet ({views.format_seconds(result.get('duration_s'))}).")
-    else:
-        error = (result or {}).get("error") or "unbekannter Fehler"
-        flash(request, f"Das Sprachmodell antwortet nicht: {error}", "error")
-    return redirect(back)
-
-
 @router.post("/haushalt")
 async def household_switch(
     request: Request, user: User = Depends(require_session_user), _csrf: Any = Depends(verify_csrf)
@@ -1822,164 +1656,11 @@ def _switch_household(request: Request, form: Any, user: Any) -> Response:
     return redirect("/eingang")
 
 
-@router.post("/einstellungen/haushalte/{household_id}/mitglieder")
-async def household_member_add(
-    request: Request, household_id: str, user: User = Depends(require_session_user), _csrf: Any = Depends(verify_csrf)
-) -> Response:
-    return await _with_form(request, _change_members, user, household_id, "add")
-
-
-@router.post("/einstellungen/haushalte/{household_id}/mitglieder/entfernen")
-async def household_member_remove(
-    request: Request, household_id: str, user: User = Depends(require_session_user), _csrf: Any = Depends(verify_csrf)
-) -> Response:
-    return await _with_form(request, _change_members, user, household_id, "remove")
-
-
-def _change_members(request: Request, form: Any, user: Any, household_id: str, change: str) -> Response:
-    """Add a user to or remove a user from a household (admins only, written to households.yaml)."""
-    back = "/einstellungen#haushalte"
-    if not security.multi_household(request):
-        return _not_found(request, user, "Haushalte gibt es in dieser Installation nicht.")
-    if not security.is_household_admin(request, user):
-        return _error_page(
-            request, user, 403, "Keine Berechtigung", "Haushaltsmitglieder können nur Administratoren ändern."
-        )
-    registry = security.get_registry(request)
-    name = form_value(form, "user")
-    try:
-        if change == "add":
-            household = registry.change_members(household_id, add=name)
-        else:
-            household = registry.change_members(household_id, remove=name)
-    except DocuShelfError as exc:
-        flash(request, views.error_text(exc, "Die Mitglieder konnten nicht geändert werden."), "error")
-        return redirect(back)
-    name = name.strip()
-    try:
-        services = registry.services(household.id)
-    except Exception:
-        log.exception("cannot open household %s for the audit log", household.id)
-        services = None
-    if change == "add":
-        _audit(services, user, "household_members", added=name, household=household.id)
-        flash(request, f"„{name}“ gehört jetzt zum Haushalt „{household.name}“.")
-    else:
-        _audit(services, user, "household_members", removed=name, household=household.id)
-        flash(request, f"„{name}“ wurde aus dem Haushalt „{household.name}“ entfernt.")
-    return redirect(back)
-
-
-@router.post("/einstellungen/abgleich")
-async def settings_reconcile(request: Request, user: User = Depends(require_user), _csrf: Any = Depends(verify_csrf)) -> Response:
-    return await _with_form(request, _reconcile, user)
-
-
-def _reconcile(request: Request, form: Any, user: Any) -> Response:
-    services = get_services(request)
-    watcher = getattr(services, "watcher", None)
-    try:
-        if watcher is not None and getattr(watcher, "running", False):
-            watcher.request_scan("Abgleich über die Weboberfläche")
-            flash(request, "Der Abgleich läuft im Hintergrund. Änderungen erscheinen in wenigen Sekunden.", "info")
-        else:
-            stats = services.reconciler.scan(full=True)
-            flash(
-                request,
-                "Abgleich abgeschlossen: "
-                f"{stats.added} neu, {stats.updated} geändert, {stats.moved} verschoben, {stats.removed} entfernt"
-                + (f", {stats.errors} Fehler" if stats.errors else "")
-                + ".",
-            )
-    except DocuShelfError as exc:
-        flash(request, views.error_text(exc, "Der Abgleich ist fehlgeschlagen."), "error")
-        return redirect("/einstellungen")
-    _audit(services, user, "reconcile")
-    return redirect("/einstellungen")
-
-
-@router.post("/einstellungen/index-neu-aufbauen")
-async def settings_rebuild(request: Request, user: User = Depends(require_user), _csrf: Any = Depends(verify_csrf)) -> Response:
-    return await _with_form(request, _rebuild, user)
-
-
-def _rebuild(request: Request, form: Any, user: Any) -> Response:
-    services = get_services(request)
-    try:
-        stats = services.rebuild(user=_username(user))
-    except DocuShelfError as exc:
-        flash(request, views.error_text(exc, "Der Index konnte nicht neu aufgebaut werden."), "error")
-        return redirect("/einstellungen")
-    count = views.plural(int(getattr(stats, "added", 0) or 0), "Dokument", "Dokumente")
-    seconds = (getattr(stats, "duration_ms", 0) or 0) / 1000
-    duration = f" in {seconds:.1f} s".replace(".", ",") if seconds >= 0.1 else ""
-    flash(request, f"Index neu aufgebaut: {count}{duration}.")
-    return redirect("/einstellungen")
-
-
-@router.post("/einstellungen/tokens")
-async def settings_token_create(
-    request: Request, user: User = Depends(require_session_user), _csrf: Any = Depends(verify_csrf)
-) -> Response:
-    return await _with_form(request, _create_token, user)
-
-
-def _create_token(request: Request, form: Any, user: Any) -> Response:
-    services = get_services(request)
-    store = getattr(services, "tokens", None)
-    if store is None:
-        flash(request, "API-Tokens sind nicht verfügbar.", "error")
-        return redirect("/einstellungen#tokens")
-    name = " ".join(form_value(form, "name").split())[:80]
-    if not name:
-        flash(request, "Bitte einen Namen für den Token angeben (z. B. „iPhone Kurzbefehl“).", "error")
-        return redirect("/einstellungen#tokens")
-    try:
-        # Tied to the account: the token stops working once the owner is no longer allowed in.
-        token, info = store.create(name, _username(user), owner=user)
-    except DocuShelfError as exc:
-        flash(request, views.error_text(exc, "Der Token konnte nicht erstellt werden."), "error")
-        return redirect("/einstellungen#tokens")
-    info = info if isinstance(info, Mapping) else {}
-    key = views.one_time.put({"token": token, "name": info.get("name", name)})
-    request.session[NEW_TOKEN_KEY] = key
-    _audit(services, user, "token_create", token=info.get("id"), name=info.get("name", name))
-    flash(request, f"Token „{name}“ erstellt. Er wird nur dieses eine Mal angezeigt.")
-    return redirect("/einstellungen#tokens")
-
-
-@router.post("/einstellungen/tokens/{token_id}/widerrufen")
-async def settings_token_revoke(
-    request: Request, token_id: str, user: User = Depends(require_session_user), _csrf: Any = Depends(verify_csrf)
-) -> Response:
-    return await _with_form(request, _revoke_token, user, token_id)
-
-
-def _revoke_token(request: Request, form: Any, user: Any, token_id: str) -> Response:
-    services = get_services(request)
-    store = getattr(services, "tokens", None)
-    if store is None:
-        flash(request, "API-Tokens sind nicht verfügbar.", "error")
-        return redirect("/einstellungen#tokens")
-    name = form_value(form, "name") or token_id
-    try:
-        result = store.revoke(token_id)
-    except DocuShelfError as exc:
-        flash(request, views.error_text(exc, "Der Token konnte nicht widerrufen werden."), "error")
-        return redirect("/einstellungen#tokens")
-    if result is False:
-        flash(request, "Diesen Token gibt es nicht mehr.", "warning")
-        return redirect("/einstellungen#tokens")
-    if isinstance(result, Mapping) and result.get("name"):
-        name = str(result["name"])
-    _audit(services, user, "token_revoke", token=token_id, name=name)
-    flash(request, f"Token „{name}“ widerrufen. Skripte mit diesem Token haben keinen Zugriff mehr.")
-    return redirect("/einstellungen#tokens")
-
-
-# Settings page "Eingangskanäle" (/einstellungen/kanaele, admins only).
+# The settings area (/einstellungen and its subpages) and its channel page.
+from .routes_settings import router as _settings_router  # noqa: E402
 from .routes_channels import router as _channels_router  # noqa: E402
 
+router.include_router(_settings_router)
 router.include_router(_channels_router)
 
 

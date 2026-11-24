@@ -335,10 +335,14 @@ def _render(
     message: str | None = None,
     ok: bool = False,
     status_code: int = 200,
+    settings_form: Any = None,
 ) -> HTMLResponse:
+    from .routes_settings import layout_context, section_views
+
     services = get_services(request)
     manager = services.channels
-    context = _page_context(request, services, manager)
+    context = layout_context(request, user, "kanaele")
+    context.update(_page_context(request, services, manager))
     context.update(
         {
             "user": user,
@@ -346,11 +350,21 @@ def _render(
             "form_values": dict(values or {}),
             "form_message": message,
             "form_ok": ok,
+            "sections": section_views(request, "kanaele", form=settings_form),
+            "multi": security.multi_household(request),
         }
     )
     response = render(request, "channels.html", context, status_code=status_code)
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+def render_channels(request: Request, user: Any, *, settings_form: Any = None, status_code: int = 200) -> Response:
+    """The page with a message for one of its settings sections (used by the settings area)."""
+    denied = _guard(request, user)
+    if denied is not None:
+        return denied
+    return _render(request, user, settings_form=settings_form, status_code=status_code)
 
 
 @router.get(PAGE, response_class=HTMLResponse)
@@ -870,4 +884,4 @@ _post("/watch/{name}/schalten", _toggle_watch)
 _post("/watch/{name}/entfernen", _remove_watch)
 
 
-__all__ = ["PAGE", "router"]
+__all__ = ["PAGE", "render_channels", "router"]

@@ -6,7 +6,7 @@ dependencies are installed from PyPI and keep their own license files.
 ## PDF.js (pdfjs-dist)
 
 - Project: Mozilla PDF.js, <https://github.com/mozilla/pdf.js>
-- Package: `pdfjs-dist` from the npm registry (official prebuilt release)
+- Package: `pdfjs-dist` 5.7.284 from the npm registry (official prebuilt release)
 - License: Apache License 2.0
 - Location: `docushelf/static/vendor/pdfjs/`
   - `pdf.min.mjs` – the library (loaded by `docushelf/static/viewer.js`)

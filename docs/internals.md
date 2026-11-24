@@ -53,7 +53,8 @@ Read `docs/concept.md` (idea and principles) first.
 | `inbox/items.py` | `InboxItem`, `InboxStore` (`create`, `save`, `load`, `find`, `list`, `iter_state`, `move`, `log`, `read_log`, `read_text`, `write_text`, `recover_orphans`, `counts`), `STAGES`, `STATES`. `create` writes originals as `original/.docushelf-*.part` and renames them when complete; with `move=False` a marker `.docushelf-creating` exists until `item.json` is written, and a failed `create` removes the partial item. `recover_orphans` discards directories whose creator is gone, deletes stale `.part` files and adopts moved-in originals (source `unbekannt`). |
 | `channels/sendung.py` | `write_sendung(source_dir, documents, context=, options=, titles=)`, `read_sendung(dir)`, `MANIFEST` |
 | `audit.py` | `AuditLog.write(user, action, **details)`, `AuditLog.tail(limit)`, `AuditLog.entries(actions=None, since=None, *, limit=None)` (newest first, reads only the monthly files in range) |
-| `notify.py` | `Notifier.send(title, message, *, tags="warning", click=None)` – fire and forget; `click` is a link opened by the notification |
+| `notify.py` | `Notifier.send(title, message, *, tags="warning", click=None)` – fire and forget; `click` is a link opened by the notification; `send_now(title, message)` waits and returns None or a German reason (settings "Test") |
+| `settings_file.py` | `SettingsFile(root_dir, env=None)` – `config/settings.yaml` written by the settings pages, see "Settings written in the web interface" |
 | `services.py` | `Services` – attribute names below are binding |
 
 ### Service container attributes
@@ -102,6 +103,27 @@ and must not call collaborators that are constructed later.
   (case-insensitive). `EndpointConfig(folder, owner=None, enabled=True, label="Scanner")` is a
   per-person subfolder of a drop zone (see `inbox/intake.py`).
 - `Settings.ios_shortcut_url` (`DOCUSHELF_IOS_SHORTCUT_URL`, https only, else `ConfigError`).
+- Precedence of a key: `DOCUSHELF_<KEY>`, `DOCUSHELF_<KEY>_FILE`, `<key>` in `settings.yaml`,
+  `<key>_file` in `settings.yaml` (a relative path is below `<data>/config/`), the default.
+  `load_settings(env, *, file_values=None, **overrides)`: `file_values` replaces the parsed file
+  (used to check a change before it is written); `parse_settings_text(text)`, `SETTINGS_FILE`.
+
+### Settings written in the web interface (settings_file.py)
+
+- `SettingsFile(root_dir, env=None)` (`env`: the server's environment, default `os.environ`):
+  `path`, `backup_path`, `secrets_dir`, `read()`, `env_source(key) -> "DOCUSHELF_KEY" | "DOCUSHELF_KEY_FILE" | None`
+  (a locked key), `env_value(key)`, `has_secret(key, values=None)`, `load(values=None) -> Settings`
+  (what a restart would load), `save(changes, *, secrets=None, check=None) -> (Settings, changed_keys)`.
+- `save`: `changes` maps keys to values (None removes the key); locked keys raise `ConfigError`.
+  `secrets` (`SECRET_FILES`: `oidc_client_secret`, `llm_api_key`, `smtp_password`) map to a new
+  value (empty: keep) or None (remove); a secret is written to `config/secrets/<name>` (600,
+  directory 700) and referenced as `<key>_file: secrets/<name>`, never stored in the YAML. The
+  result is loaded with `load_settings` (and passed to `check`) before anything is written; then
+  secrets, `settings.yaml.bak` (previous text) and the new file (atomic, sorted keys, short header).
+- `apply_live(containers, changes)` replaces `Settings` fields of running service containers, of
+  their channel manager's `base_settings` and the notifier URL. `LIVE_KEYS` lists the keys the
+  pages apply this way (`auto_file*`, `notify_url`, `owner_names`, `trash_retention_days`,
+  `keep_originals_days`); everything else needs a restart.
 
 ### Households (households.py)
 
@@ -168,6 +190,11 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
   household in the data root, and every change re-runs `protect_households` (watch folders). `start()` also
   protects the households' watch folders from each other (`inbox.intake.protect_households`)
   and, in household mode, starts the one global SMTP receiver.
+- `change_members(id, *, add=|remove=, field="users"|"groups")`, `change_admins(*, add=|remove=,
+  field="admins"|"admin_groups", keep=user)` (refuses a change that takes `keep`'s own admin rights,
+  `admin_with(user, admins, admin_groups)`), `update_household(id, values)` (`name`, `owner_names`,
+  `notify_url`, `auto_file`; None removes the key; the household's running settings follow through
+  `settings_file.apply_live`). All of them go through `_rewrite`:
 - `change_members` (under the registry lock) reads `households.yaml`, refuses if the current file
   does not validate, edits the household's `users` (duplicates compared case-insensitively →
   `Conflict`; removing an unlisted name → `NotFound`), dumps the YAML (`sort_keys=False`: other
@@ -197,6 +224,8 @@ trash, rules, tokens, audit log, index and channels. Background and decisions: `
 <data>/config/households.yaml        optional, global (see "Households")
 <data>/config/channels.yaml(.bak)    optional, per household: channels set in the web UI
 <data>/config/secrets/imap-<name>    IMAP passwords of channels.yaml (file 600, directory 700)
+<data>/config/secrets/<name>         global secrets set in the settings pages (oidc-client-secret, llm-api-key, smtp-password)
+<data>/config/settings.yaml(.bak)    global: settings changed in the web interface
 <data>/config/shortcuts/DocuShelf senden.shortcut   optional, global: served by GET /kurzbefehl
 <data>/protokoll/audit-YYYY-MM.jsonl
 <data>/index/docushelf.sqlite3, index/cache/ (thumbnails), index/tmp/ (OCR work dirs),
@@ -835,14 +864,38 @@ Owned by two modules sets; the boundary:
   actions for them (each POST uses `verify_csrf` and `require_user`, then redirects).
   Also: `/eingang/automatisch` (automatic filings of the last 60 days, "Passt" =
   `POST /eingang/automatisch/{id}/passt`), `POST /eingang/sammelablage` (checkbox values
-  `id[:fingerprint[:dup]]`), `POST /einstellungen/sprachmodell/testen` (runs `llm_probe`),
-  `POST /haushalt` (form field `id`; `switch_household`, then redirect to `/eingang`; the header
+  `id[:fingerprint[:dup]]`), `POST /haushalt` (form field `id`; `switch_household`, then redirect to `/eingang`; the header
   shows a switcher only for users with ≥ 2 households),
-  `POST /einstellungen/haushalte/{id}/mitglieder` and `…/mitglieder/entfernen` (form field `user`;
-  browser login + CSRF; 404 without households, 403 unless `is_household_admin`; calls
-  `Registry.change_members`, audits `household_members` with `added`/`removed` in the edited
-  household's log; the settings section `#haushalte` is only rendered for admins),
+  household members (see the settings area below; 404 without households, 403 unless
+  `is_household_admin`; audit `household_members` with `added`/`removed` in the edited household's log),
   `GET|POST /teilen`.
+  Settings area (`web/routes_settings.py`, fields and sections in `web/settings_fields.py`,
+  templates `settings/*.html`, static `settings.css`, `settings.js`): `GET /einstellungen` (overview:
+  stat tiles, one card per subpage with a status line) and the subpages `haushalte`, `kanaele`,
+  `ablage`, `ki`, `verarbeitung`, `benachrichtigungen`, `handy`, `anmeldung`, `protokoll`
+  (`?aktion=&wer=&suche=&zeitraum=&anzahl=`), `system`, all with the navigation of
+  `settings/_base.html`. Everyone logged in sees the overview, `handy`, `protokoll` and `system`
+  (index part); the others and every installation-wide part need `is_admin` (=
+  `security.is_channel_admin`, browser login), else 403. Each `settings_fields.Section` is one form
+  posting to `POST /einstellungen/speichern/{page}/{section}` (session + CSRF + admin): fields are
+  parsed and checked (`parse_field`, `Field.check`), values equal to the default are removed,
+  locked keys skipped; scope `global` goes to `SettingsFile.save` (with `_lockout_check` for
+  `oidc`, `zugang`, `sitzung`, which also need the checkbox `bestaetigt`), scope `household` with
+  several households to `Registry.update_household`. Errors re-render the page (400) with the typed
+  values (never secrets); success redirects to `?gespeichert=<section>#<section>` (message in the
+  card), audit `settings_change` (`summary`, `keys`, `household`). Live sections are applied at once
+  (`apply_live`, `app.state.settings`, `registry.settings`); `pending_restart(request)` compares
+  `Field.value_of` of the running `app.state.settings` with `SettingsFile.load()` and the layout shows
+  "Neustart nötig, damit … wirkt" with `POST /einstellungen/neustart` (admin, CSRF; audit `restart`;
+  calls `app.state.restart_handler` after `RESTART_DELAY` – `docushelf serve` sets it to a graceful
+  uvicorn shutdown – and answers `settings/restarting.html`). `app.state.settings_env` (default
+  `os.environ`) is the environment that locks keys. Further routes: `POST /einstellungen/sprachmodell/testen`
+  (tests the saved model while it waits for a restart), `POST /einstellungen/benachrichtigungen/testen`,
+  `POST /einstellungen/haushalte/{id}/mitglieder[/entfernen]` (field `user`),
+  `…/gruppen[/entfernen]` (field `group`), `…/{id}/name`, `POST /einstellungen/haushalte/administratoren[/entfernen]`
+  (fields `art` = `person`|`gruppe`, `name`), `POST /einstellungen/abgleich`, `…/index-neu-aufbauen`
+  (redirect to `/einstellungen/system`), `POST /einstellungen/tokens`, `…/tokens/{id}/widerrufen`
+  (redirect to `/einstellungen/handy#tokens`).
   Channel settings (`web/routes_channels.py`, included into the UI router):
   `GET /einstellungen/kanaele` and the POST actions below it – `imap` (create/edit; field
   `aktion=testen` runs `probe_connection` and saves nothing), `imap/{name}/schalten|entfernen`,
@@ -873,7 +926,7 @@ Owned by two modules sets; the boundary:
   `ios_shortcut(request)` hides the button). `POST /kurzbefehl/token` (browser session + CSRF)
   creates a token `iPhone-Kurzbefehl` for the user (owner snapshot like every browser token),
   keeps it in `views.one_time` under the session key `_new_token` with `phone: True` and
-  redirects to `/einstellungen#handy`, where `_share_help.html` shows it once.
+  redirects to `/einstellungen/handy#handy`, where `_share_help.html` shows it once.
 
 ### cli.py
 `docushelf [--data-dir PATH] [--household ID | --haushalt ID] [-v] COMMAND`:

@@ -1,0 +1,58 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_lead %}Dokumente vom Handy schickst du am einfachsten über „Teilen“ direkt an DocuShelf. Für Kurzbefehle und Skripte gibt es API-Tokens.{% endblock %}
+{% block settings_content %}
+<div class="settings-stack">
+  {% call s.info_card('handy', 'Handy & Tablet', 'smartphone', 'Fotos, PDFs und Scans landen über „Teilen“ direkt im Eingang.') %}
+  <div class="share-help">{% include "_share_help.html" ignore missing %}</div>
+  {% endcall %}
+
+  {% call s.info_card('tokens', 'API-Tokens', 'key', 'Für Skripte und Kurzbefehle. Ein Token wird als „Authorization: Bearer …“ mitgeschickt und hat dieselben Rechte wie du – außer Tokens verwalten und im Papierkorb endgültig löschen.') %}
+  <p class="hint">Ein Token gilt nur, solange dein Konto für DocuShelf freigeschaltet ist. Geht ein Gerät verloren oder verlässt jemand den Haushalt: Token hier widerrufen.{% if current_household %} Tokens gehören zum Haushalt <strong>{{ current_household.name }}</strong> – Uploads landen in dessen Eingang.{% endif %}</p>
+  {% if new_token and not new_token.phone %}
+  <div class="token-reveal" role="status">
+    <p><strong>Neuer Token „{{ new_token.name }}“</strong> – jetzt kopieren, er wird nicht noch einmal angezeigt:</p>
+    <div class="copy-field">
+      <input class="input mono" type="text" value="{{ new_token.token }}" readonly id="new-token-value" aria-label="Neuer API-Token">
+      <button class="btn btn-primary" type="button" data-copy="#new-token-value">{{ icon('copy') }} Kopieren</button>
+    </div>
+  </div>
+  {% endif %}
+  {% if not tokens_available %}
+  <p class="muted">API-Tokens sind in dieser Installation nicht verfügbar.</p>
+  {% else %}
+    {% if tokens %}
+    <ul class="token-list">
+      {% for t in tokens %}
+      <li class="token-item">
+        <div class="token-main">
+          <strong>{{ t.name }}</strong>
+          <span class="muted"><span class="mono">{{ t.prefix or '' }}…</span> · {{ t.user or '–' }} · erstellt {{ m.time_tag(t.created_at, 'date') }}</span>
+          {% if not t.method %}<span class="badge badge-muted" title="Über die Kommandozeile oder mit einer älteren Version erstellt: gilt auch dann, wenn das Konto nicht mehr freigeschaltet ist.">ohne Kontobindung</span>{% endif %}
+        </div>
+        <form method="post" action="/einstellungen/tokens/{{ t.id|urlpart }}/widerrufen" data-confirm="Token „{{ t.name }}“ widerrufen? Skripte mit diesem Token verlieren sofort den Zugriff." data-confirm-ok="Widerrufen" data-confirm-danger>
+          {{ m.csrf() }}
+          <input type="hidden" name="name" value="{{ t.name }}">
+          <button class="btn btn-ghost btn-small btn-danger-text" type="submit">Widerrufen</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Noch keine Tokens.</p>
+    {% endif %}
+    <form class="add-row" method="post" action="/einstellungen/tokens">
+      {{ m.csrf() }}
+      <div class="field">
+        <label for="token-name">Name des neuen Tokens</label>
+        <input id="token-name" class="input" type="text" name="name" required maxlength="80" placeholder="z. B. iPhone Kurzbefehl" autocomplete="off">
+      </div>
+      <button class="btn" type="submit">{{ icon('plus') }} Token erstellen</button>
+    </form>
+  {% endif %}
+  {% endcall %}
+
+  {% for v in sections %}{{ s.section_card(v) }}{% endfor %}
+</div>
+{% endblock %}

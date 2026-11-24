@@ -100,6 +100,8 @@ _HOUSEHOLD_KEYS = (
     "watch_folders",
 )
 _AUTO_FILE_KEYS = ("mode", "threshold", "sources", "new_folders", "wait_for_llm", "notify")
+# Keys of a household the web interface changes while the server runs (Registry.update_household).
+_LIVE_HOUSEHOLD_KEYS = ("name", "owner_names", "notify_url", "auto_file")
 _IMAP_SECRET_KEYS = ("password", "password_file", "password_env")
 _IMAP_KEYS = (
     "host",
@@ -848,19 +850,25 @@ class Registry:
         API tokens never are. Being an admin does not grant access to any
         household: the settings page still needs one the user belongs to.
         """
-        if user is None or not self.multi:
+        if not self.multi:
+            return False
+        return self.admin_with(user, self.admins, self.admin_groups)
+
+    def admin_with(self, user: Any, admins: Sequence[str], admin_groups: Sequence[str]) -> bool:
+        """:meth:`is_admin` for the given ``admins`` and ``admin_groups`` of households.yaml."""
+        if user is None:
             return False
         method = getattr(user, "method", None)
         if method == "local":
             return True
         if method != "oidc":
             return False
-        names = set(self.admins) | _casefolded(getattr(self.settings, "admin_users", ()))
+        names = _casefolded(admins) | _casefolded(getattr(self.settings, "admin_users", ()))
         username = str(getattr(user, "username", "") or "").strip().casefold()
         email = str(getattr(user, "email", "") or "").strip().casefold()
         if (username and username in names) or (email and email in names):
             return True
-        groups = set(self.admin_groups) | _casefolded(getattr(self.settings, "admin_groups", ()))
+        groups = _casefolded(admin_groups) | _casefolded(getattr(self.settings, "admin_groups", ()))
         if not groups:
             return False
         return any(str(group).strip().casefold() in groups for group in getattr(user, "groups", None) or ())
@@ -888,94 +896,236 @@ class Registry:
             return None  # the household's manager did not accept it above
         return household
 
-    # -- membership ---------------------------------------------------------------------
-    def change_members(self, household_id: str, *, add: str | None = None, remove: str | None = None) -> Household:
-        """Add a user to or remove a user from the ``users`` of a household.
+    # -- changes to households.yaml ------------------------------------------------------
+    def change_members(
+        self,
+        household_id: str,
+        *,
+        add: str | None = None,
+        remove: str | None = None,
+        field: str = "users",
+    ) -> Household:
+        """Add a user (or group) to or remove one from a household.
 
-        The change is made in ``households.yaml`` itself: the current file is
-        read, the entry changed, and the whole result validated like at start-up
-        before the file is replaced (atomically, the previous content kept as
-        ``households.yaml.bak``). Other entries and the order of the households
-        stay as they are; comments are lost. Afterwards the groups, users and
-        admins of the running households are taken from the new file, so access
-        changes with the next request; service containers keep running.
+        ``field`` is ``users`` (user names or e-mail addresses) or ``groups``
+        (OIDC groups). The change is made in ``households.yaml`` itself: the
+        current file is read, the entry changed, and the whole result validated
+        like at start-up before the file is replaced (atomically, the previous
+        content kept as ``households.yaml.bak``). Other entries and the order of
+        the households stay as they are; comments are lost. Afterwards the
+        groups, users and admins of the running households are taken from the
+        new file, so access changes with the next request; service containers
+        keep running.
 
         Raises ConfigError (German) for invalid input or an invalid file,
-        Conflict for a user already listed and NotFound for an unknown
-        household or a user not listed. Nothing is written in these cases.
+        Conflict for an entry already listed and NotFound for an unknown
+        household or an entry not listed. Nothing is written in these cases.
         """
         if not self.multi:
             raise ConfigError("Haushaltsmitglieder lassen sich nur mit households.yaml verwalten.")
         if (add is None) == (remove is None):
             raise ValueError("exactly one of add and remove is required")
+        if field not in ("users", "groups"):
+            raise ValueError("field must be users or groups")
         name = clean_member(add if add is not None else remove)
-        env = os.environ if self._env is None else self._env
-        path = households_file(self.settings)
+        what = "Mitglied" if field == "users" else "Gruppe"
         with self._lock:
             household = self.get(household_id)
-            text = _read_text(path)
-            raw = _parse_yaml(text)
-            try:
-                parse_households(raw, self.settings, env=env)
-            except ConfigError as exc:
-                raise ConfigError(f"Die Datei ist derzeit ungültig, es wurde nichts geändert. {exc}") from exc
-            entry = next(
-                (e for e in raw["households"] if isinstance(e, dict) and e.get("id") == household.id), None
-            )
-            if entry is None:
-                raise NotFound(
-                    f"Den Haushalt „{household.id}“ gibt es in {HOUSEHOLDS_FILE} nicht mehr. "
-                    "Haushalte hinzufügen oder entfernen wirkt erst nach einem Neustart."
-                )
-            users = _member_list(entry.get("users"))
-            key = name.casefold()
-            listed = [u for u in users if u.strip().casefold() == key]
-            if add is not None:
-                if listed:
-                    raise Conflict(f"„{name}“ ist schon Mitglied im Haushalt „{household.name}“.")
-                users.append(name)
-            else:
-                if not listed:
-                    raise NotFound(f"„{name}“ steht nicht (mehr) bei den Benutzern des Haushalts „{household.name}“.")
-                users = [u for u in users if u.strip().casefold() != key]
-            entry["users"] = users
 
-            new_text = yaml.safe_dump(raw, allow_unicode=True, sort_keys=False, default_flow_style=False, width=4096)
-            new_raw = _parse_yaml(new_text)
-            households = parse_households(new_raw, self.settings, env=env)
-            admins = parse_admins(new_raw)
-            admin_groups = parse_admin_groups(new_raw)
-            if [h.id for h in households] != [h.id for h in self.households]:
-                raise ConfigError(
-                    f"In {HOUSEHOLDS_FILE} wurden inzwischen Haushalte hinzugefügt, entfernt oder umsortiert. "
-                    "Bitte DocuShelf zuerst neu starten; es wurde nichts geändert."
-                )
-            backup = path.with_name(path.name + BACKUP_SUFFIX)
-            try:
-                # Keep the file's permissions: it may hold an IMAP password.
-                file_mode = stat.S_IMODE(path.stat().st_mode)
-                atomic_write_text(backup, text, mode=file_mode)
-                atomic_write_text(path, new_text, mode=file_mode)
-            except OSError as exc:
-                raise ConfigError(
-                    f"{HOUSEHOLDS_FILE} konnte nicht gespeichert werden: {exc.strerror or exc}"
-                ) from exc
-            self._apply_members(households, admins, admin_groups)
+            def edit(raw: dict[str, Any]) -> None:
+                entry = self._entry(raw, household)
+                values = _member_list(entry.get(field))
+                key = name.casefold()
+                listed = [v for v in values if v.strip().casefold() == key]
+                if add is not None:
+                    if listed:
+                        raise Conflict(f"„{name}“ ist schon {what} im Haushalt „{household.name}“.")
+                    values.append(name)
+                else:
+                    if not listed:
+                        where = "bei den Benutzern" if field == "users" else "bei den Gruppen"
+                        raise NotFound(f"„{name}“ steht nicht (mehr) {where} des Haushalts „{household.name}“.")
+                    values = [v for v in values if v.strip().casefold() != key]
+                entry[field] = values
+
+            households, admins, admin_groups = self._rewrite(edit)
+            self._apply_file(households, admins, admin_groups)
             changed = self.get(household.id)
         log.info(
-            "household %s: user %s %s", household.id, "added" if add is not None else "removed", name
+            "household %s: %s %s %s", household.id, field[:-1], "added" if add is not None else "removed", name
         )
         return changed
+
+    def change_admins(
+        self,
+        *,
+        add: str | None = None,
+        remove: str | None = None,
+        field: str = "admins",
+        keep: Any = None,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Add an entry to or remove one from ``admins`` or ``admin_groups`` of households.yaml.
+
+        ``keep`` is the user making the change: a change that would take their
+        own admin rights away is refused (ConfigError), so nobody locks
+        themselves out by accident. Returns the new admins and admin groups.
+        """
+        if not self.multi:
+            raise ConfigError("Administratoren lassen sich hier nur mit households.yaml verwalten.")
+        if (add is None) == (remove is None):
+            raise ValueError("exactly one of add and remove is required")
+        if field not in ("admins", "admin_groups"):
+            raise ValueError("field must be admins or admin_groups")
+        name = clean_member(add if add is not None else remove)
+        what = "Administrator" if field == "admins" else "Administratorgruppe"
+        with self._lock:
+
+            def edit(raw: dict[str, Any]) -> None:
+                values = _member_list(raw.get(field))
+                key = name.casefold()
+                listed = [v for v in values if v.strip().casefold() == key]
+                if add is not None:
+                    if listed:
+                        raise Conflict(f"„{name}“ ist schon als {what} eingetragen.")
+                    values.append(name)
+                else:
+                    if not listed:
+                        raise NotFound(f"„{name}“ ist nicht (mehr) als {what} eingetragen.")
+                    values = [v for v in values if v.strip().casefold() != key]
+                if values:
+                    raw[field] = values
+                else:
+                    raw.pop(field, None)
+
+            def guard(households: Sequence[Household], admins: tuple[str, ...], admin_groups: tuple[str, ...]) -> None:
+                if keep is not None and self.admin_with(keep, self.admins, self.admin_groups) and not self.admin_with(
+                    keep, admins, admin_groups
+                ):
+                    raise ConfigError(
+                        "Damit würdest du dir selbst die Administratorrechte entziehen. Bitte das über ein "
+                        "anderes Administratorkonto ändern; es wurde nichts geändert."
+                    )
+
+            households, admins, admin_groups = self._rewrite(edit, guard=guard)
+            self._apply_file(households, admins, admin_groups)
+        log.info("households.yaml: %s %s %s", field, "added" if add is not None else "removed", name)
+        return admins, admin_groups
+
+    def update_household(self, household_id: str, values: Mapping[str, Any]) -> Household:
+        """Change ``name``, ``owner_names``, ``notify_url`` or ``auto_file`` of a household.
+
+        A value of None removes the key (the global setting applies again).
+        Validated and written like :meth:`change_members`; the running
+        household's settings are updated at once (see
+        :func:`docushelf.settings_file.apply_live`).
+        """
+        if not self.multi:
+            raise ConfigError("Haushalte lassen sich nur mit households.yaml einzeln einstellen.")
+        unknown = [key for key in values if key not in _LIVE_HOUSEHOLD_KEYS]
+        if unknown:
+            raise ValueError(f"cannot change {', '.join(unknown)} at run time")
+        with self._lock:
+            household = self.get(household_id)
+
+            def edit(raw: dict[str, Any]) -> None:
+                entry = self._entry(raw, household)
+                for key, value in values.items():
+                    if value is None:
+                        entry.pop(key, None)
+                    else:
+                        entry[key] = list(value) if isinstance(value, tuple) else value
+
+            households, admins, admin_groups = self._rewrite(edit)
+            self._apply_file(households, admins, admin_groups, live={household.id: tuple(values)})
+            changed = self.get(household.id)
+        log.info("household %s: %s changed", household.id, ", ".join(sorted(values)))
+        return changed
+
+    def _entry(self, raw: dict[str, Any], household: Household) -> dict[str, Any]:
+        entry = next((e for e in raw["households"] if isinstance(e, dict) and e.get("id") == household.id), None)
+        if entry is None:
+            raise NotFound(
+                f"Den Haushalt „{household.id}“ gibt es in {HOUSEHOLDS_FILE} nicht mehr. "
+                "Haushalte hinzufügen oder entfernen wirkt erst nach einem Neustart."
+            )
+        return entry
+
+    def _rewrite(
+        self,
+        edit: Callable[[dict[str, Any]], None],
+        *,
+        guard: Callable[[list[Household], tuple[str, ...], tuple[str, ...]], None] | None = None,
+    ) -> tuple[list[Household], tuple[str, ...], tuple[str, ...]]:
+        """Read households.yaml, apply ``edit``, validate like at start-up and write it (with .bak).
+
+        Call with the registry lock held. Raises without writing anything if the
+        current file or the result is invalid, or if households were added,
+        removed or reordered in the meantime (that needs a restart).
+        """
+        env = os.environ if self._env is None else self._env
+        path = households_file(self.settings)
+        text = _read_text(path)
+        raw = _parse_yaml(text)
+        try:
+            parse_households(raw, self.settings, env=env)
+        except ConfigError as exc:
+            raise ConfigError(f"Die Datei ist derzeit ungültig, es wurde nichts geändert. {exc}") from exc
+        edit(raw)
+        new_text = yaml.safe_dump(raw, allow_unicode=True, sort_keys=False, default_flow_style=False, width=4096)
+        new_raw = _parse_yaml(new_text)
+        households = parse_households(new_raw, self.settings, env=env)
+        admins = parse_admins(new_raw)
+        admin_groups = parse_admin_groups(new_raw)
+        if [h.id for h in households] != [h.id for h in self.households]:
+            raise ConfigError(
+                f"In {HOUSEHOLDS_FILE} wurden inzwischen Haushalte hinzugefügt, entfernt oder umsortiert. "
+                "Bitte DocuShelf zuerst neu starten; es wurde nichts geändert."
+            )
+        if guard is not None:
+            guard(households, admins, admin_groups)
+        backup = path.with_name(path.name + BACKUP_SUFFIX)
+        try:
+            # Keep the file's permissions: it may hold an IMAP password.
+            file_mode = stat.S_IMODE(path.stat().st_mode)
+            atomic_write_text(backup, text, mode=file_mode)
+            atomic_write_text(path, new_text, mode=file_mode)
+        except OSError as exc:
+            raise ConfigError(f"{HOUSEHOLDS_FILE} konnte nicht gespeichert werden: {exc.strerror or exc}") from exc
+        return households, admins, admin_groups
 
     def _apply_members(
         self, households: Sequence[Household], admins: tuple[str, ...], admin_groups: tuple[str, ...] = ()
     ) -> None:
         """Take groups and users from freshly loaded households; everything else stays as started."""
+        self._apply_file(households, admins, admin_groups)
+
+    def _apply_file(
+        self,
+        households: Sequence[Household],
+        admins: tuple[str, ...],
+        admin_groups: tuple[str, ...] = (),
+        *,
+        live: Mapping[str, Sequence[str]] | None = None,
+    ) -> None:
+        """Take groups, users and admins from freshly loaded households.
+
+        ``live`` names, per household id, further fields that changed and take
+        effect at once (:data:`_LIVE_HOUSEHOLD_KEYS`); the household's running
+        settings follow. Everything else stays as started (paths, mailboxes and
+        the like need a restart).
+        """
+        live = dict(live or {})
         fresh = {household.id: household for household in households}
-        updated = [
-            replace(old, groups=fresh[old.id].groups, users=fresh[old.id].users) if old.id in fresh else old
-            for old in self.households
-        ]
+        updated = []
+        for old in self.households:
+            new = fresh.get(old.id)
+            if new is None:
+                updated.append(old)
+                continue
+            fields = {"groups": new.groups, "users": new.users}
+            for key in live.get(old.id, ()):
+                fields[key] = getattr(new, key)
+            updated.append(replace(old, **fields))
         self._index(updated)
         self.households = updated
         self.admins = admins
@@ -987,6 +1137,19 @@ class Registry:
                     services.household = household
                 except AttributeError:
                     pass
+            if services is not None and household.id in live:
+                from .settings_file import apply_live
+
+                effective = settings_for(self.settings, household, households=updated)
+                apply_live(
+                    [services],
+                    {
+                        "auto_file": effective.auto_file,
+                        "owner_names": effective.owner_names,
+                        "notify_url": effective.notify_url,
+                        "household_name": effective.household_name,
+                    },
+                )
 
     # -- lifecycle --------------------------------------------------------------------
     def recover(self) -> None:

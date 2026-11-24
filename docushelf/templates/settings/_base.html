@@ -1,0 +1,40 @@
+{#- Layout of the settings area: navigation on the left (tabs on phones), the page on the right. -#}
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block title %}{% if settings_page and settings_page.key != 'uebersicht' %}{{ settings_page.label }} · {% endif %}Einstellungen{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ static_url('settings.css') }}">{% block settings_head %}{% endblock %}{% endblock %}
+{% block content %}
+<div class="settings-shell">
+  <nav class="settings-nav" aria-label="Bereiche der Einstellungen">
+    <p class="settings-nav-title">Einstellungen</p>
+    <ul>
+      {% for item in settings_nav %}
+      <li>
+        <a class="settings-nav-item{% if item.active %} is-active{% endif %}" href="{{ item.url }}"{% if item.active %} aria-current="page"{% endif %}>
+          {{ icon(item.icon) }}<span>{{ item.label }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </nav>
+
+  <div class="settings-main">
+    <header class="settings-head">
+      <h1>{% block settings_title %}{{ settings_page.label if settings_page else 'Einstellungen' }}{% endblock %}</h1>
+      <p class="settings-lead">{% block settings_lead %}{% endblock %}</p>
+    </header>
+
+    {% if restart_pending %}{{ s.restart_banner() }}{% endif %}
+    {% if settings_error %}
+    <div class="alert alert-error" role="alert">
+      {{ icon('alert-circle') }}
+      <p><strong>Die Datei settings.yaml lässt sich nicht lesen:</strong> {{ settings_error }} Bis sie repariert ist, kann hier nichts gespeichert werden.</p>
+    </div>
+    {% endif %}
+
+    {% block settings_content %}{% endblock %}
+  </div>
+</div>
+<script type="module" src="{{ static_url('settings.js') }}"></script>
+{% endblock %}

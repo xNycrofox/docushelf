@@ -1,0 +1,28 @@
+{% extends "settings/_base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "settings/_macros.html" as s with context %}
+{% block settings_lead %}Was mit einem Dokument passiert, bevor es im Eingang erscheint: Bilder werden zu PDFs, leere Seiten fallen weg, gescannte Seiten bekommen Text.{% endblock %}
+{% block settings_content %}
+<div class="settings-stack">
+  {% call s.info_card('zustand', 'Zustand', 'scan') %}
+  <dl class="kv">
+    {% if worker %}
+    <div><dt>Verarbeitung</dt><dd>{{ s.status(worker.running, 'läuft', 'gestoppt', bad=true) }} <span class="muted">{{ worker.threads_alive or 0 }} von {{ worker.threads or 0 }} Threads aktiv</span></dd></div>
+    {% if worker.current_jobs %}
+    <div><dt>Gerade</dt><dd>{% for job in worker.current_jobs %}<span class="mono">{{ job.kind }} {{ job.key }}</span> <span class="muted">({{ job.seconds }} s)</span>{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div>
+    {% endif %}
+    {% if worker.last_error %}<div><dt>Letzter Fehler</dt><dd class="text-danger">{{ worker.last_error }}</dd></div>{% endif %}
+    {% endif %}
+    <div><dt>Texterkennung</dt><dd>
+      {% if not ocr.enabled %}{{ s.status(false, '', 'ausgeschaltet') }}
+      {% elif ocr.available %}{{ s.status(true, 'verfügbar') }}{% if ocr.version %} <span class="muted mono">OCRmyPDF {{ ocr.version }}</span>{% endif %}
+      {% elif ocr.available is none %}<span class="muted">unbekannt</span>
+      {% else %}{{ s.status(false, '', 'nicht installiert', bad=true) }}{% endif %}
+    </dd></div>
+    <div><dt>Installierte Sprachen</dt><dd>{% for lang in ocr.languages %}<span class="chip chip-quiet mono">{{ lang }}</span> {% else %}<span class="muted">unbekannt</span>{% endfor %}{% if ocr.missing_languages %}<br><span class="text-danger">Fehlt: {{ ocr.missing_languages|join(', ') }}</span>{% endif %}</dd></div>
+  </dl>
+  {% endcall %}
+
+  {% for v in sections %}{{ s.section_card(v) }}{% endfor %}
+</div>
+{% endblock %}

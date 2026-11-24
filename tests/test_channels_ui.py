@@ -196,9 +196,9 @@ def test_saving_again_keeps_the_password_and_writes_a_backup(single):
     assert not (single.layout.config / "secrets" / "imap-familie").exists()
     assert list(single.services.channels.fetchers) == ["post"]
 
-    # The settings page mentions further mailboxes.
+    # The overview of the settings counts the mailboxes.
     assert post(client, "/imap", {**MAILBOX, "name": "erika"}).status_code == 303
-    assert "und ein weiteres Postfach" in client.get("/einstellungen").text
+    assert "2 Postfächer" in client.get("/einstellungen").text
 
 
 def test_invalid_input_is_shown_in_german_and_keeps_what_was_typed(single):
@@ -441,7 +441,7 @@ def test_household_admins_manage_their_current_household_only(multi):
     assert channels.from_file
     assert [r.address for r in channels.config.smtp.recipients] == ["scan-a@example.test", "scan-erika@example.test"]
     assert multi.registry.by_smtp_recipient("scan-erika@example.test").id == "familie-a"
-    assert "scan-a@example.test, scan-erika@example.test" in berta.get("/einstellungen").text
+    assert "Scan per Mail an" in berta.get("/einstellungen").text
     assert not (multi.registry.services("eltern").layout.config / "channels.yaml").exists()
 
     # An address of another household is refused.
@@ -476,7 +476,7 @@ def test_shortcut_download_and_link(single, settings):
 
     response = client.get("/kurzbefehl", follow_redirects=False)
     assert response.status_code == 404 and "noch nicht hinterlegt" in response.text
-    assert "Kurzbefehl installieren" not in client.get("/einstellungen").text
+    assert "Kurzbefehl installieren" not in client.get("/einstellungen/handy").text
 
     folder = settings.root_dir / "config" / "shortcuts"
     folder.mkdir(parents=True)
@@ -485,7 +485,7 @@ def test_shortcut_download_and_link(single, settings):
     assert response.status_code == 200 and response.content == b"signed-shortcut"
     assert response.headers["content-type"] == "application/octet-stream"
     assert response.headers["content-disposition"].startswith("attachment;")
-    assert "Kurzbefehl installieren" in client.get("/einstellungen").text
+    assert "Kurzbefehl installieren" in client.get("/einstellungen/handy").text
 
 
 def test_shortcut_redirects_to_the_icloud_link(settings):
@@ -511,19 +511,19 @@ def test_shortcut_url_must_be_https(env):
 
 def test_phone_token_is_created_for_the_user_and_shown_once(single):
     client = admin_client(single.app)
-    page = client.get("/einstellungen").text
+    page = client.get("/einstellungen/handy").text
     assert "Token für dieses Handy erstellen" in page
     assert "Serveradresse für den Kurzbefehl" in page and 'value="http://testserver"' in page
 
     response = client.post("/kurzbefehl/token", data={"csrf_token": csrf(client)}, follow_redirects=False)
-    assert response.status_code == 303 and response.headers["location"] == "/einstellungen#handy"
+    assert response.status_code == 303 and response.headers["location"] == "/einstellungen/handy#handy"
     tokens = single.services.tokens.list()
     assert [t["name"] for t in tokens] == ["iPhone-Kurzbefehl"] and tokens[0]["user"] == "admin"
 
-    first = client.get("/einstellungen")
+    first = client.get("/einstellungen/handy")
     assert 'id="phone-token-value"' in first.text and 'id="new-token-value"' not in first.text
     assert first.headers["cache-control"] == "no-store"
-    assert 'id="phone-token-value"' not in client.get("/einstellungen").text  # only once
+    assert 'id="phone-token-value"' not in client.get("/einstellungen/handy").text  # only once
 
     assert client.post("/kurzbefehl/token", data={}, follow_redirects=False).status_code == 403
     token, _ = single.services.tokens.create("skript", "admin")
