@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Regeln{% endblock %}
+{% block content %}
+<script type="application/json" id="folders-data">{{ folders|script_json }}</script>
+
+<div class="page-head">
+  <div>
+    <h1>Regeln</h1>
+    <p class="page-sub">Regeln schlagen für neue Dokumente einen Ordner vor – abgelegt wird trotzdem erst nach deiner Bestätigung{% if auto.enabled %}, außer bei Regeln, die als „automatisch“ markiert sind{% endif %}.</p>
+  </div>
+</div>
+
+{% if file_error %}
+<div class="alert alert-error" role="alert">
+  {{ icon('alert-circle') }}
+  <div>
+    <p><strong>Die Regeldatei ist fehlerhaft.</strong> Bis sie korrigiert ist, gelten die zuletzt gültigen Regeln.</p>
+    <p class="mono">{{ file_error }}</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="rules-layout">
+  <section class="section" aria-labelledby="rules-title">
+    <div class="section-head"><h2 id="rules-title">Aktive Regeln <span class="count">{{ rules|length }}</span></h2></div>
+    {% if rules %}
+    <ol class="rule-list">
+      {% for rule in rules %}
+      <li class="card rule">
+        <div class="rule-head">
+          <h3 class="rule-name">{{ icon('signpost') }}{{ rule.name }}{% if rule.auto %} <span class="badge badge-accent" title="Wird ohne Rückfrage abgelegt, wenn die automatische Ablage eingeschaltet ist">{{ icon('wand') }}automatisch</span>{% endif %}</h3>
+          <form method="post" action="/regeln/{{ loop.index0 }}/loeschen" data-confirm="Regel „{{ rule.name }}“ löschen?" data-confirm-ok="Regel löschen">
+            {{ m.csrf() }}
+            <input type="hidden" name="name" value="{{ rule.name }}">
+            <button class="btn btn-ghost btn-small btn-icon btn-danger-text" type="submit" aria-label="Regel „{{ rule.name }}“ löschen" title="Regel löschen">{{ icon('trash') }}</button>
+          </form>
+        </div>
+        <p class="rule-text">
+          <span class="rule-word">Wenn</span>
+          {% for c in rule.conditions %}
+            {% if not loop.first %}<span class="rule-word">und</span>{% endif %}
+            {{ c.label }}
+            {% for v in c.shown %}<span class="chip chip-quiet">{{ v }}</span>{% if not loop.last %} <span class="rule-or">oder</span> {% endif %}{% endfor %}
+          {% endfor %}
+        </p>
+        <p class="rule-text">
+          <span class="rule-word">dann</span> {{ m.folder_path(rule.folder) }}
+          {% if rule.title %}<span class="rule-detail">Titel <span class="mono">{{ rule.title }}</span></span>{% endif %}
+          {% if rule.tags %}<span class="rule-detail">Tags {% for t in rule.tags %}<span class="chip chip-tag">{{ t }}</span>{% endfor %}</span>{% endif %}
+        </p>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+      {% call m.empty_state('Noch keine Regeln', 'rules') %}
+        <p>Am einfachsten entstehen Regeln beim Ablegen: Haken bei „Regel anlegen“ setzen. Oder lege hier eine an.</p>
+      {% endcall %}
+    {% endif %}
+  </section>
+
+  <section class="card new-rule" aria-labelledby="new-rule-title">
+    <div class="card-head"><h2 id="new-rule-title">{{ icon('plus') }} Neue Regel</h2></div>
+    <form class="card-body stack" method="post" action="/regeln/neu">
+      {{ m.csrf() }}
+      {% if rule_error %}<div class="alert alert-error" role="alert">{{ icon('alert-circle') }}<p>{{ rule_error }}</p></div>{% endif %}
+      <div class="field">
+        <label for="r-name">Name <span class="optional">optional</span></label>
+        <input id="r-name" class="input" type="text" name="name" value="{{ new_rule.name }}" maxlength="80" placeholder="z. B. Stadtwerke Strom">
+      </div>
+      <fieldset class="fieldset">
+        <legend>Wenn …</legend>
+        <p class="hint">Mindestens eine Angabe. Mehrere Werte mit Komma trennen – dann genügt einer davon.</p>
+        <div class="field">
+          <label for="r-sender">Erkannter Absender enthält</label>
+          <input id="r-sender" class="input" type="text" name="sender" value="{{ new_rule.sender }}" placeholder="Stadtwerke, DREWAG" aria-describedby="r-sender-hint">
+          <p class="hint" id="r-sender-hint">Ist kein Absender erkannt, zählt nur der Briefkopf auf Seite 1.</p>
+        </div>
+        <div class="field">
+          <label for="r-keywords">Eines dieser Stichwörter kommt vor</label>
+          <input id="r-keywords" class="input" type="text" name="keywords_any" value="{{ new_rule.keywords_any }}" placeholder="Abschlag, Jahresabrechnung">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="r-reference">Kunden-/Vertragsnummer</label>
+            <input id="r-reference" class="input mono" type="text" name="reference" value="{{ new_rule.reference }}" placeholder="123456789">
+          </div>
+          <div class="field">
+            <label for="r-doctype">Dokumenttyp</label>
+            <input id="r-doctype" class="input" type="text" name="doc_type" value="{{ new_rule.doc_type }}" list="r-doctype-list" placeholder="Rechnung">
+            <datalist id="r-doctype-list">{% for t in doc_types %}<option value="{{ t }}"></option>{% endfor %}</datalist>
+          </div>
+        </div>
+        <details class="more-fields"{% if new_rule.iban or new_rule.mail_from %} open{% endif %}>
+          <summary>Weitere Bedingungen</summary>
+          <div class="field-row">
+            <div class="field">
+              <label for="r-iban">IBAN</label>
+              <input id="r-iban" class="input mono" type="text" name="iban" value="{{ new_rule.iban }}" placeholder="DE…">
+            </div>
+            <div class="field">
+              <label for="r-mail">Mail von</label>
+              <input id="r-mail" class="input" type="text" name="mail_from" value="{{ new_rule.mail_from }}" placeholder="rechnung@example.com oder @example.com">
+            </div>
+          </div>
+        </details>
+      </fieldset>
+      <fieldset class="fieldset">
+        <legend>… dann vorschlagen</legend>
+        {{ m.folder_field('r-folder', new_rule.folder, label='Zielordner') }}
+        <div class="field">
+          <label for="r-title">Titelvorlage <span class="optional">optional</span></label>
+          <input id="r-title" class="input" type="text" name="title" value="{{ new_rule.title }}" placeholder="{sender} {type} {date:%m/%Y}">
+          <p class="hint">Platzhalter: <span class="mono">{sender} {type} {date} {date:%Y-%m} {year} {month} {month_name} {subject} {original}</span></p>
+        </div>
+        <div class="field">
+          <label for="r-tags">Tags <span class="optional">optional</span></label>
+          <input id="r-tags" class="input" type="text" name="tags" value="{{ new_rule.tags }}" placeholder="steuerrelevant {year}">
+        </div>
+        <label class="checkbox rule-check">
+          <input type="checkbox" name="auto" value="1"{% if new_rule.auto %} checked{% endif %} aria-describedby="r-auto-hint">
+          <span>Automatisch ablegen, ohne zu fragen</span>
+        </label>
+        <p class="hint" id="r-auto-hint">{% if auto.enabled %}Die automatische Ablage ist an: Passt diese Regel, landet das Dokument direkt im Zielordner und erscheint unter „Automatisch abgelegt“.{% else %}Wirkt erst, wenn die automatische Ablage eingeschaltet ist (<span class="mono">DOCUSHELF_AUTO_FILE</span>).{% endif %}</p>
+      </fieldset>
+      <button class="btn btn-primary" type="submit">{{ icon('check') }} Regel speichern</button>
+    </form>
+  </section>
+</div>
+
+<section class="card yaml-editor" id="yaml" aria-labelledby="yaml-title">
+  <details{% if yaml_error %} open{% endif %}>
+    <summary class="card-head"><h2 id="yaml-title">{{ icon('edit') }} Regeldatei bearbeiten (YAML)</h2>{{ icon('chevron-down', 'disclosure-caret') }}</summary>
+    <form class="card-body stack" method="post" action="/regeln/yaml">
+      {{ m.csrf() }}
+      <input type="hidden" name="base_hash" value="{{ yaml_hash }}">
+      <p class="hint">Für Fortgeschrittene: Hier stehen alle Regeln, wie sie in <span class="mono">{{ rules_path or 'config/rules.yaml' }}</span> gespeichert sind. Vor dem Speichern wird geprüft, ob alles gültig ist.</p>
+      <p class="hint" data-comment-hint>Kommentare (Zeilen mit <span class="mono">#</span>) bleiben erhalten, wenn eine Regel nur angehängt wird – mit „Regel anlegen“ beim Ablegen oder über „Neue Regel“. Löschst du eine Regel über die Oberfläche oder ändert DocuShelf bestehende Regeln, wird die Datei neu geschrieben: Kommentare gehen dabei verloren, die vorige Fassung liegt dann als <span class="mono">rules.yaml.bak</span> daneben.</p>
+      {% if yaml_error %}<div class="alert {{ 'alert-warning' if yaml_conflict else 'alert-error' }}" role="alert">{{ icon('alert-circle') }}<p class="pre-line">{{ yaml_error }}</p></div>{% endif %}
+      <label class="visually-hidden" for="yaml-text">Regeln als YAML</label>
+      <textarea id="yaml-text" class="textarea code-editor" name="yaml" rows="22" spellcheck="false" autocapitalize="off" autocomplete="off" data-code-editor>{{ yaml_text }}</textarea>
+      <div class="button-row">
+        <button class="btn btn-primary" type="submit">{{ icon('check') }} Prüfen und speichern</button>
+        {% if yaml_conflict %}<label class="checkbox"><input type="checkbox" name="force" value="1"> <span>Trotzdem speichern</span></label>{% endif %}
+      </div>
+    </form>
+  </details>
+</section>
+{% endblock %}

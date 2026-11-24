@@ -1,0 +1,468 @@
+{
+ "export_layout": {
+  "archive": "dir",
+  "manifest.json": "file",
+  "metadata.json": "file",
+  "originals": "dir"
+ },
+ "models": {
+  "auditlog.logentry": {
+   "count": 4387,
+   "omitted": true
+  },
+  "auth.group": {
+   "count": 4,
+   "omitted": true
+  },
+  "auth.permission": {
+   "count": 186,
+   "omitted": true
+  },
+  "auth.user": {
+   "count": 5,
+   "top_level_keys": [
+    "fields",
+    "model",
+    "pk"
+   ],
+   "fields": {
+    "date_joined": [
+     "str(datetime ISO)"
+    ],
+    "email": [
+     "str"
+    ],
+    "first_name": [
+     "str"
+    ],
+    "groups": [
+     "list[]",
+     "list[int]"
+    ],
+    "is_active": [
+     "bool"
+    ],
+    "is_staff": [
+     "bool"
+    ],
+    "is_superuser": [
+     "bool"
+    ],
+    "last_login": [
+     "str(datetime ISO)"
+    ],
+    "last_name": [
+     "str"
+    ],
+    "password": [
+     "str"
+    ],
+    "user_permissions": [
+     "list[]"
+    ],
+    "username": [
+     "str"
+    ]
+   },
+   "file_examples": []
+  },
+  "contenttypes.contenttype": {
+   "count": 46,
+   "omitted": true
+  },
+  "documents.correspondent": {
+   "count": 98,
+   "top_level_keys": [
+    "fields",
+    "model",
+    "pk"
+   ],
+   "fields": {
+    "is_insensitive": [
+     "bool"
+    ],
+    "match": [
+     "str"
+    ],
+    "matching_algorithm": [
+     "int"
+    ],
+    "name": [
+     "str"
+    ],
+    "owner": [
+     "int",
+     "null"
+    ]
+   },
+   "file_examples": []
+  },
+  "documents.customfield": {
+   "count": 3,
+   "top_level_keys": [
+    "fields",
+    "model",
+    "pk"
+   ],
+   "fields": {
+    "created": [
+     "str(datetime ISO)"
+    ],
+    "data_type": [
+     "str"
+    ],
+    "extra_data": [
+     "null"
+    ],
+    "name": [
+     "str"
+    ]
+   },
+   "file_examples": []
+  },
+  "documents.customfieldinstance": {
+   "count": 3,
+   "top_level_keys": [
+    "fields",
+    "model",
+    "pk"
+   ],
+   "fields": {
+    "created": [
+     "str(datetime ISO)"
+    ],
+    "deleted_at": [
+     "null"
+    ],
+    "document": [
+     "int"
+    ],
+    "field": [
+     "int"
+    ],
+    "restored_at": [
+     "null"
+    ],
+    "transaction_id": [
+     "null"
+    ],
+    "value_bool": [
+     "null"
+    ],
+    "value_date": [
+     "null",
+     "str(date YYYY-MM-DD)"
+    ],
+    "value_document_ids": [
+     "null"
+    ],
+    "value_float": [
+     "null"
+    ],
+    "value_int": [
+     "null"
+    ],
+    "value_long_text": [
+     "null"
+    ],
+    "value_monetary": [
+     "null",
+     "str"
+    ],
+    "value_monetary_amount": [
+     "null",
+     "str"
+    ],
+    "value_select": [
+     "null"
+    ],
+    "value_text": [
+     "null",
+     "str"
+    ],
+    "value_url": [
+     "null"
+    ]
+   },
+   "file_examples": []
+  },
+  "documents.document": {
+   "count": 369,
+   "top_level_keys": [
+    "__exported_archive_name__",
+    "__exported_file_name__",
+    "fields",
+    "model",
+    "pk"
+   ],
+   "fields": {
+    "added": [
+     "str(datetime ISO)"
+    ],
+    "archive_checksum": [
+     "null",
+     "str(hex64)"
+    ],
+    "archive_filename": [
+     "null",
+     "str"
+    ],
+    "archive_serial_number": [
+     "null"
+    ],
+    "checksum": [
+     "str(hex64)"
+    ],
+    "content": [
+     "str"
+    ],
+    "correspondent": [
+     "int",
+     "null"
+    ],
+    "created": [
+     "str(date YYYY-MM-DD)"
+    ],
+    "deleted_at": [
+     "null"
+    ],
+    "document_type": [
+     "int"
+    ],
+    "filename": [
+     "str"
+    ],
+    "mime_type": [
+     "str"
+    ],
+    "modified": [
+     "str(datetime ISO)"
+    ],
+    "original_filename": [
+     "str"
+    ],
+    "owner": [
+     "int",
+     "null"
+    ],
+    "page_count": [
+     "int",
+     "null"
+    ],
+    "restored_at": [
+     "null",
+     "str(datetime ISO)"
+    ],
+    "root_document": [
+     "null"
+    ],
+    "storage_path": [
+     "int"
+    ],
+    "tags": [
+     "list[int]"
+    ],
+    "title": [
+     "str"
+    ],
+    "transaction_id": [
+     "null"
+    ],
+    "version_index": [
+     "null"
+    ],
+    "version_label": [
+     "null"
+    ]
+   },
+   "file_examples": [
+    {
+     "__exported_file_name__": "originals/<name>.pdf"
+    },
+    {
+     "__exported_archive_name__": "archive/<name>.pdf"
+    },
+    {
+     "__exported_file_name__": "originals/<name>.pdf"
+    },
+    {
+     "__exported_archive_name__": "archive/<name>.pdf"
+    }
+   ]
+  },
+  "documents.documenttype": {
+   "count": 16,
+   "top_level_keys": [
+    "fields",
+    "model",
+    "pk"
+   ],
+   "fields": {
+    "is_insensitive": [
+     "bool"
+    ],
+    "match": [
+     "str"
+    ],
+    "matching_algorithm": [
+     "int"
+    ],
+    "name": [
+     "str"
+    ],
+    "owner": [
+     "null"
+    ]
+   },
+   "file_examples": []
+  },
+  "documents.note": {
+   "count": 5,
+   "top_level_keys": [
+    "fields",
+    "model",
+    "pk"
+   ],
+   "fields": {
+    "created": [
+     "str(datetime ISO)"
+    ],
+    "deleted_at": [
+     "null"
+    ],
+    "document": [
+     "int"
+    ],
+    "format": [
+     "str"
+    ],
+    "note": [
+     "str"
+    ],
+    "restored_at": [
+     "null"
+    ],
+    "transaction_id": [
+     "null"
+    ],
+    "user": [
+     "int"
+    ]
+   },
+   "file_examples": []
+  },
+  "documents.savedview": {
+   "count": 2,
+   "omitted": true
+  },
+  "documents.storagepath": {
+   "count": 3,
+   "top_level_keys": [
+    "fields",
+    "model",
+    "pk"
+   ],
+   "fields": {
+    "is_insensitive": [
+     "bool"
+    ],
+    "match": [
+     "str"
+    ],
+    "matching_algorithm": [
+     "int"
+    ],
+    "name": [
+     "str"
+    ],
+    "owner": [
+     "int"
+    ],
+    "path": [
+     "str"
+    ]
+   },
+   "file_examples": []
+  },
+  "documents.tag": {
+   "count": 37,
+   "top_level_keys": [
+    "fields",
+    "model",
+    "pk"
+   ],
+   "fields": {
+    "color": [
+     "str"
+    ],
+    "is_inbox_tag": [
+     "bool"
+    ],
+    "is_insensitive": [
+     "bool"
+    ],
+    "match": [
+     "str"
+    ],
+    "matching_algorithm": [
+     "int"
+    ],
+    "name": [
+     "str"
+    ],
+    "owner": [
+     "int",
+     "null"
+    ],
+    "tn_parent": [
+     "null"
+    ]
+   },
+   "file_examples": []
+  },
+  "documents.uisettings": {
+   "count": 5,
+   "omitted": true
+  },
+  "documents.workflow": {
+   "count": 6,
+   "omitted": true
+  },
+  "documents.workflowaction": {
+   "count": 7,
+   "omitted": true
+  },
+  "documents.workflowactionwebhook": {
+   "count": 1,
+   "omitted": true
+  },
+  "documents.workflowtrigger": {
+   "count": 7,
+   "omitted": true
+  },
+  "guardian.groupobjectpermission": {
+   "count": 864,
+   "omitted": true
+  },
+  "guardian.userobjectpermission": {
+   "count": 79,
+   "omitted": true
+  },
+  "paperless.applicationconfiguration": {
+   "count": 1,
+   "omitted": true
+  },
+  "paperless_mail.mailaccount": {
+   "count": 5,
+   "omitted": true
+  },
+  "paperless_mail.mailrule": {
+   "count": 4,
+   "omitted": true
+  },
+  "socialaccount.socialaccount": {
+   "count": 5,
+   "omitted": true
+  }
+ }
+}

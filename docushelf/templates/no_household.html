@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "_illustrations.html" as ill %}
+{% block title %}{{ title or 'Kein Haushalt freigegeben' }}{% endblock %}
+{% block public %}
+<div class="card public-card">
+  <div class="error-page">
+    {{ ill.draw('error') }}
+    <p class="error-code">Fehler 403</p>
+    <h1 class="error-title">{{ title or 'Kein Haushalt freigegeben' }}</h1>
+    <p class="error-message">{{ message }}</p>
+    {% if account %}
+    <p class="muted">Angemeldet als <strong>{{ account.name or account.username }}</strong>{% if account.email %} ({{ account.email }}){% endif %}.</p>
+    <div class="error-actions">
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-primary" type="submit">{{ icon('logout') }} Abmelden</button>
+      </form>
+    </div>
+    {% else %}
+    <div class="error-actions">
+      <a class="btn btn-primary" href="/login">{{ icon('lock') }} Zur Anmeldung</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

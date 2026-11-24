@@ -1,0 +1,42 @@
+{#- Help for sending documents from phones: Android (installed web app in the share sheet) and
+    iPhone/iPad (Shortcut with an API token). Included on the share page and in the settings
+    section "Handy & Tablet". share.js adds the install button and registers the service worker. -#}
+{%- set share_server = base_url if base_url is defined and base_url else (settings.base_url if settings is defined and settings and settings.base_url else '') -%}
+<div class="stack">
+  <section class="stack" aria-labelledby="share-help-android">
+    <h3 id="share-help-android">Android</h3>
+    <ol class="tip-list">
+      <li>Öffne DocuShelf in Chrome (oder Edge, Samsung Internet) und melde dich an.</li>
+      <li>Tippe im Browsermenü <span aria-hidden="true">⋮</span> auf <strong>„App installieren“</strong> oder <strong>„Zum Startbildschirm hinzufügen“</strong>.</li>
+      <li>Wähle in der Galerie, in den Dateien oder im Mailprogramm PDFs oder Fotos aus, tippe auf <strong>„Teilen“</strong> und dann auf <strong>„DocuShelf“</strong>.</li>
+      <li>DocuShelf zeigt die Dateien an. Mehrere Fotos eines Briefs kannst du zu einem Dokument zusammenfügen; mit <strong>„Hochladen“</strong> landen sie im Eingang.</li>
+    </ol>
+    <p class="button-row" data-share-install hidden>
+      <button class="btn btn-primary btn-small" type="button">{{ icon('download') }} App installieren</button>
+    </p>
+    <p class="hint" data-share-installed hidden>DocuShelf ist auf diesem Gerät als App installiert.</p>
+    <p class="hint">Das Installieren klappt nur, wenn DocuShelf über HTTPS aufgerufen wird. Am Computer bieten Chrome und Edge es ebenfalls an.</p>
+  </section>
+
+  <section class="stack" aria-labelledby="share-help-iphone">
+    <h3 id="share-help-iphone">iPhone &amp; iPad</h3>
+    <p>Web-Apps erscheinen auf dem iPhone nicht im Teilen-Menü. Dafür gibt es den Kurzbefehl <strong>„DocuShelf senden“</strong>:</p>
+    <ol class="tip-list">
+      <li>Erstelle unter <a href="/einstellungen#tokens">Einstellungen → API-Tokens</a> einen Token, z. B. „iPhone Kurzbefehl“, und kopiere ihn.</li>
+      <li>Hol dir den Kurzbefehl: Er wird mit <span class="mono">contrib/ios/build_shortcut.py</span> aus dem DocuShelf-Quellcode erzeugt und auf einem Mac signiert. Die Anleitung steht in <span class="mono">contrib/ios/README.md</span> – dort steht auch, wie du ihn ohne Mac direkt auf dem iPhone anlegst.</li>
+      <li>Beim Import fragt der Kurzbefehl nach der Serveradresse und dem Token.</li>
+      <li>Danach im Teilen-Menü bei PDFs, Fotos oder Dateien <strong>„DocuShelf senden“</strong> wählen. Die Dateien landen im Eingang.</li>
+    </ol>
+    {% if share_server %}
+    <div class="field">
+      <label for="share-server-url">Serveradresse für den Kurzbefehl</label>
+      <div class="copy-field">
+        <input id="share-server-url" class="input mono" type="text" value="{{ share_server }}" readonly>
+        <button class="btn" type="button" data-copy="#share-server-url">{{ icon('copy') }} Kopieren</button>
+      </div>
+    </div>
+    {% endif %}
+    <p class="hint">Der Token hat dieselben Rechte wie du. Geht das Gerät verloren, widerrufe ihn unter Einstellungen → API-Tokens.</p>
+  </section>
+</div>
+<script type="module" src="{{ static_url('share.js') }}"></script>

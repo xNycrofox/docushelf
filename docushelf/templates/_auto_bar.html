@@ -1,0 +1,8 @@
+{# Compact state of automatic filing on the inbox page. #}
+{% if auto and auto.enabled %}
+<div class="auto-bar" data-auto-bar>
+  {{ icon('wand', 'auto-bar-icon') }}
+  <p class="auto-bar-text"><strong>Automatische Ablage:</strong> {{ auto.config.summary }} · {{ plural(auto.recent, 'Dokument', 'Dokumente') }} in den letzten 7 Tagen{% if auto.pending %} · <span class="auto-bar-warn">{{ auto.pending }} unsicher</span>{% endif %}</p>
+  <a class="auto-bar-link" href="/eingang/automatisch{% if auto.pending %}?unsicher=1{% endif %}">Ansehen {{ icon('chevron-right') }}</a>
+</div>
+{% endif %}

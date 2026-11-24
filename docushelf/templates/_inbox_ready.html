@@ -1,0 +1,183 @@
+{% import "_macros.html" as m with context %}
+<script type="application/json" id="folders-data">{{ folders|script_json }}</script>
+<script type="application/json" id="tags-data">{{ tags|script_json }}</script>
+
+<div class="item-layout">
+  <section class="preview" aria-label="Vorschau">
+    {% if preview_unavailable %}
+    <figure class="preview-placeholder" data-preview-placeholder>
+      <img src="{{ static_url('page-unavailable.svg') }}" alt="" width="700" height="990" decoding="async">
+      <figcaption class="preview-placeholder-note">{{ icon('lock') }}<span>Keine Vorschau: Die PDF ist mit einem Passwort geschützt. Lade sie herunter und öffne sie mit dem Passwort, um sie anzusehen.</span></figcaption>
+    </figure>
+    {% else %}
+    <div class="preview-frame">
+      <iframe src="/api/v1/inbox/{{ item.id }}/document#view=FitH&amp;navpanes=0" data-preview-frame data-src="/api/v1/inbox/{{ item.id }}/document"
+              title="Vorschau von „{{ title }}“" loading="lazy"></iframe>
+    </div>
+    <a class="preview-first" href="/api/v1/inbox/{{ item.id }}/document" target="_blank" rel="noopener">
+      <img src="/api/v1/inbox/{{ item.id }}/pages/1.png?w=700" srcset="/api/v1/inbox/{{ item.id }}/pages/1.png?w=700 1x, /api/v1/inbox/{{ item.id }}/pages/1.png?w=1400 2x"
+           alt="Seite 1 von „{{ title }}“" loading="lazy" decoding="async" width="700" height="990">
+    </a>
+    {% endif %}
+    {% if preview_pages > 1 %}
+    <ol class="page-strip" aria-label="Seiten">
+      {% for n in range(1, preview_pages + 1) %}
+      <li>
+        <a class="page-thumb{% if n == 1 %} is-current{% endif %}" href="/api/v1/inbox/{{ item.id }}/pages/{{ n }}.png?w=1400" target="_blank" rel="noopener" data-page="{{ n }}" aria-label="Seite {{ n }}">
+          <img src="/api/v1/inbox/{{ item.id }}/pages/{{ n }}.png?w=120" srcset="/api/v1/inbox/{{ item.id }}/pages/{{ n }}.png?w=120 1x, /api/v1/inbox/{{ item.id }}/pages/{{ n }}.png?w=240 2x" alt="" loading="lazy" decoding="async" width="120" height="170">
+          <span class="page-number">{{ n }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+    <p class="preview-links">
+      {% if preview_unavailable %}<a href="/api/v1/inbox/{{ item.id }}/document?download=1" download>{{ icon('download') }} Herunterladen</a>{% else %}<a href="/api/v1/inbox/{{ item.id }}/document" target="_blank" rel="noopener">{{ icon('external') }} In neuem Tab öffnen</a>{% endif %}
+      {% for f in originals %}<a href="{{ f.url }}" download="{{ f.name }}">{{ icon('download') }} Original{% if originals|length > 1 %} {{ f.number }}{% endif %}</a>{% endfor %}
+    </p>
+  </section>
+
+  <div class="item-side">
+    {% if errors %}
+    <div class="alert alert-error" role="alert">{{ icon('alert-circle') }}<div>{% for e in errors %}<p>{{ e }}</p>{% endfor %}</div></div>
+    {% endif %}
+    {% if duplicate %}
+    <div class="alert alert-warning">
+      {{ icon('layers') }}
+      <p>Mögliches Duplikat: Ein Dokument mit identischem Inhalt liegt schon {{ duplicate.kind }} – <a href="{{ duplicate.url }}">{{ duplicate.label }}</a>.</p>
+    </div>
+    {% endif %}
+    {% if protection_notice %}
+    <div class="alert alert-info" data-protection>{{ icon('lock') }}<p>{{ protection_notice }}</p></div>
+    {% endif %}
+    {% if auto_hold %}
+    <div class="note auto-hold-note" data-auto-hold>
+      {{ icon('wand') }}
+      <p><strong>{{ auto_hold.label }}.</strong>{% if auto_hold.reasons|length > 1 %} <span class="muted">{{ auto_hold.reasons|join(' · ') }}</span>{% endif %} Leg es selbst ab – du entscheidest.</p>
+    </div>
+    {% endif %}
+
+    {% if suggestions %}
+    <section class="card suggestions" aria-labelledby="suggestions-title">
+      <div class="card-head">
+        <h2 id="suggestions-title">{{ icon('sparkle') }} Vorschläge</h2>
+        <form method="post" action="/eingang/{{ item.id }}/vorschlaege">
+          {{ m.csrf() }}
+          <button class="btn btn-ghost btn-small" type="submit" title="Vorschläge mit den aktuellen Regeln und Ordnern neu berechnen">{{ icon('refresh') }} Neu berechnen</button>
+        </form>
+      </div>
+      <ul class="suggestion-list">
+      {% for s in suggestions %}
+        <li>
+          <button type="button" class="suggestion{% if s.folder == form.folder %} is-selected{% endif %}" data-suggestion='{{ s.data|tojson }}' aria-pressed="{{ 'true' if s.folder == form.folder else 'false' }}">
+            <span class="suggestion-main">
+              {{ icon('folder', 'suggestion-icon') }}
+              <span class="suggestion-folder">{% if s.folder_parent %}<span class="muted">{{ s.folder_parent }}/</span>{% endif %}<strong>{{ s.folder_label }}</strong></span>
+              {% if s.new_folder %}<span class="badge badge-new" title="Diesen Ordner gibt es noch nicht">neu</span>{% endif %}
+              <span class="suggestion-score" title="Wie sicher der Vorschlag ist">{{ s.score_pct }} %</span>
+            </span>
+            <span class="suggestion-source">{{ icon(s.source_icon) }}{{ s.source_label }}{% if s.title %} · „{{ s.title }}“{% endif %}{% if s.doc_date %} · {{ s.doc_date|date_de }}{% endif %}</span>
+            {% if s.reasons %}<span class="suggestion-reasons">weil {{ s.reasons|join(' · ') }}</span>{% endif %}
+          </button>
+        </li>
+      {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <form class="card filing-form" id="filing-form" method="post" action="/eingang/{{ item.id }}/ablegen" data-filing-form>
+      {{ m.csrf() }}
+      <div class="card-head"><h2>{{ icon('archive') }} Ablegen</h2></div>
+      <div class="card-body stack">
+        {{ m.folder_field('f-folder', form.folder) }}
+        <div class="field">
+          <label for="f-title">Titel</label>
+          <input id="f-title" class="input" type="text" name="title" value="{{ form.title }}" required maxlength="150" data-title-input>
+          <p class="hint">Dateiname: <span class="mono" data-filename-preview>{{ filename_preview or '–' }}</span></p>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-date">Datum</label>
+            <input id="f-date" class="input" type="date" name="doc_date" value="{{ form.doc_date }}" data-date-input>
+            {% if dates %}
+            <div class="chips" role="group" aria-label="Im Dokument gefundene Daten">
+              {% for d in dates %}<button type="button" class="chip chip-button" data-set-date="{{ d.value }}" title="{{ d.label or 'gefundenes Datum' }}">{{ d.display }}{% if d.label %} <span class="chip-note">{{ d.label }}</span>{% endif %}</button>{% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          <div class="field">
+            <label for="f-sender">Absender <span class="optional">optional</span></label>
+            <input id="f-sender" class="input" type="text" name="sender" value="{{ form.sender }}" list="sender-list" autocomplete="off" data-sender-input>
+            <datalist id="sender-list">{% for s in senders %}<option value="{{ s }}"></option>{% endfor %}</datalist>
+          </div>
+        </div>
+        {{ m.tag_field('f-tags', form.tags) }}
+        <label class="checkbox rule-check">
+          <input type="checkbox" name="create_rule" value="1"{% if form.create_rule %} checked{% endif %}>
+          <span>Regel anlegen: Dokumente von <strong data-rule-sender data-empty="diesem Absender">{{ form.sender or 'diesem Absender' }}</strong> künftig hierhin</span>
+        </label>
+      </div>
+      <div class="card-foot form-actions">
+        <button class="btn btn-primary btn-large" type="submit">{{ icon('check') }} Ablegen <kbd class="kbd-hint" data-shortcut-hint>Strg + Enter</kbd></button>
+      </div>
+    </form>
+
+    <div class="item-actions">
+      <details class="disclosure">
+        <summary class="btn btn-ghost">{{ icon('refresh') }} Neu verarbeiten</summary>
+        <form class="disclosure-body stack" method="post" action="/eingang/{{ item.id }}/neu-verarbeiten">
+          {{ m.csrf() }}
+          <label class="checkbox"><input type="checkbox" name="skip_blank_removal" value="1"{% if item.options.skip_blank_removal %} checked{% endif %}> <span>ohne Leerseitenentfernung</span></label>
+          <label class="checkbox"><input type="checkbox" name="skip_ocr" value="1"{% if item.options.skip_ocr %} checked{% endif %}> <span>ohne Texterkennung (OCR)</span></label>
+          <p class="hint">Das Original bleibt unverändert; alle Schritte laufen noch einmal von vorn.</p>
+          <button class="btn btn-small" type="submit">{{ icon('refresh') }} Jetzt neu verarbeiten</button>
+        </form>
+      </details>
+      <form method="post" action="/eingang/{{ item.id }}/loeschen" data-confirm="„{{ title }}“ in den Papierkorb verschieben?" data-confirm-ok="In den Papierkorb">
+        {{ m.csrf() }}
+        <input type="hidden" name="after" value="next">
+        <button class="btn btn-ghost btn-danger-text" type="submit">{{ icon('trash') }} Löschen</button>
+      </form>
+    </div>
+
+    <details class="card facts-card" open>
+      <summary class="card-head"><h2>{{ icon('eye') }} Erkannt</h2>{{ icon('chevron-down', 'disclosure-caret') }}</summary>
+      <div class="card-body">
+        {% if item.pages_removed %}
+        <div class="note">
+          {{ icon('file') }}
+          <p>{{ plural(item.pages_removed|length, 'leere Seite', 'leere Seiten') }} entfernt (Seite {{ item.pages_removed|join(', ') }} des Scans).</p>
+          <form method="post" action="/eingang/{{ item.id }}/neu-verarbeiten">
+            {{ m.csrf() }}
+            <input type="hidden" name="skip_blank_removal" value="1">
+            {% if item.options.skip_ocr %}<input type="hidden" name="skip_ocr" value="1">{% endif %}
+            <button class="btn btn-ghost btn-small" type="submit">Ohne Entfernung neu verarbeiten</button>
+          </form>
+        </div>
+        {% endif %}
+        {% if facts %}
+        <dl class="facts">
+          {% for fact in facts %}
+          <div class="fact">
+            <dt>{{ icon(fact.icon) }}{{ fact.label }}</dt>
+            <dd{% if fact.mono %} class="mono"{% endif %}>{{ fact.shown|join(', ') }}</dd>
+          </div>
+          {% endfor %}
+        </dl>
+        {% else %}
+        <p class="muted">Im Text wurden keine Beträge, Nummern oder Absender gefunden.</p>
+        {% endif %}
+        {% if keywords %}
+        <p class="keywords" aria-label="Stichwörter">{% for k in keywords %}<span class="chip chip-quiet">{{ k }}</span>{% endfor %}</p>
+        {% endif %}
+      </div>
+    </details>
+
+    {% if log %}
+    <details class="card log-card">
+      <summary class="card-head"><h2>{{ icon('clock') }} Verarbeitungsprotokoll</h2>{{ icon('chevron-down', 'disclosure-caret') }}</summary>
+      <pre class="log">{{ log }}</pre>
+    </details>
+    {% endif %}
+  </div>
+</div>

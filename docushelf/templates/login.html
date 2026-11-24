@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "_illustrations.html" as ill %}
+{% block title %}Anmelden{% endblock %}
+{% block body_class %}page-login{% endblock %}
+{% block public %}
+<div class="login">
+  <div class="card login-card">
+    <div class="login-head">
+      {{ ill.shelf() }}
+      <h1 class="login-title">DocuShelf</h1>
+      <p class="login-sub">Deine Papiere – ordentlich im Regal und schnell gefunden.</p>
+    </div>
+
+    {% if logged_out %}
+    <div class="alert alert-success" role="status">{{ icon('check-circle') }}<p>Du wurdest abgemeldet. Bis bald!</p></div>
+    {% endif %}
+    {% if error %}
+    <div class="alert alert-error" role="alert">{{ icon('alert-circle') }}<p>{{ error }}</p></div>
+    {% endif %}
+
+    <div class="login-actions">
+    {% if oidc_enabled %}
+      <a class="btn btn-primary btn-large btn-block" href="/login/oidc{% if next %}?next={{ next|urlencode }}{% endif %}">{{ icon('shield') }} {{ oidc_label or 'Mit SSO anmelden' }}</a>
+    {% endif %}
+
+    {% if local_login_enabled %}
+      {% if oidc_enabled %}
+      <details class="login-local">
+        <summary>Notfallzugang (lokaler Administrator)</summary>
+      {% endif %}
+        <form class="stack login-form" method="post" action="/login/local">
+          {{ m.csrf() }}
+          <input type="hidden" name="next" value="{{ next or '' }}">
+          <div class="field">
+            <label for="login-user">Benutzername</label>
+            <input id="login-user" class="input" type="text" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required{% if not oidc_enabled %} autofocus{% endif %}>
+          </div>
+          <div class="field">
+            <label for="login-pass">Passwort</label>
+            <input id="login-pass" class="input" type="password" name="password" autocomplete="current-password" required>
+          </div>
+          <button class="btn {{ 'btn-ghost' if oidc_enabled else 'btn-primary' }} btn-block" type="submit">{{ icon('lock') }} Anmelden</button>
+        </form>
+      {% if oidc_enabled %}
+      </details>
+      {% endif %}
+    {% endif %}
+
+    {% if not oidc_enabled and not local_login_enabled %}
+      <div class="alert alert-warning">
+        {{ icon('alert') }}
+        <p>Es ist noch keine Anmeldung eingerichtet. Bitte SSO (<span class="mono">DOCUSHELF_OIDC_*</span>) oder einen lokalen Zugang (<span class="mono">DOCUSHELF_ADMIN_PASSWORD_HASH</span>) konfigurieren.</p>
+      </div>
+    {% endif %}
+    </div>
+  </div>
+  <p class="login-foot">DocuShelf {{ app_version }}</p>
+</div>
+{% endblock %}

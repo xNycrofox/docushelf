@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Automatisch abgelegt · Eingang{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Eingang</h1>
+    <p class="page-sub">Was DocuShelf selbst abgelegt hat. Passt etwas nicht, ändere es auf der Seite des Dokuments – nichts wird gelöscht.</p>
+  </div>
+</div>
+
+{% include "_inbox_tabs.html" %}
+
+<section class="section auto-section" aria-labelledby="auto-title">
+  <div class="section-head">
+    <h2 id="auto-title">Automatisch abgelegt <span class="count">{{ filings|length }}</span></h2>
+    <nav class="segmented" aria-label="Filter">
+      <a class="segmented-btn{% if not only_uncertain %} is-active{% endif %}" href="/eingang/automatisch"{% if not only_uncertain %} aria-current="page"{% endif %}>Alle</a>
+      <a class="segmented-btn{% if only_uncertain %} is-active{% endif %}" href="/eingang/automatisch?unsicher=1"{% if only_uncertain %} aria-current="page"{% endif %}>Nur unsichere{% if auto.pending %} <span class="count">{{ auto.pending }}</span>{% endif %}</a>
+    </nav>
+  </div>
+  <p class="section-note auto-note">
+    {% if auto.enabled %}{{ icon('wand') }} Automatische Ablage {{ auto.config.summary }}.{% else %}{{ icon('info') }} Die automatische Ablage ist ausgeschaltet.{% endif %}
+    Hier stehen die automatischen Ablagen der letzten {{ window_days }} Tage, neueste zuerst.
+  </p>
+
+  {% if shown %}
+  <ul class="auto-list">
+  {% for f in shown %}
+    <li class="card auto-row{% if f.gone %} is-gone{% endif %}{% if f.pending %} is-pending{% endif %}" data-auto-row="{{ f.doc_id }}">
+      <span class="auto-icon" aria-hidden="true">{{ icon('file-text') }}</span>
+      <div class="auto-body">
+        <h3 class="auto-title">{% if f.gone %}<span>{{ f.title }}</span>{% else %}<a href="{{ f.url }}">{{ f.current_title }}</a>{% endif %}</h3>
+        <p class="auto-meta">
+          <span>{{ icon('clock') }}{{ m.time_tag(f.at, 'datetime') }}</span>
+          {% if f.gone %}
+          <span class="auto-gone">nicht mehr im Archiv – zuletzt <span class="mono break">{{ f.path or f.folder }}</span></span>
+          {% else %}
+          <span>{{ m.folder_path(f.current_folder) }}</span>
+          {% if f.moved %}<span class="muted">inzwischen verschoben</span>{% endif %}
+          {% endif %}
+        </p>
+        {% if f.signals %}
+        <p class="auto-signals" aria-label="Hinweise, die für den Ordner sprechen">{% for s in f.signals %}<span class="chip chip-quiet">{{ s }}</span>{% endfor %}</p>
+        {% endif %}
+        {% if f.reasons %}<p class="auto-reasons">{{ f.reasons|join(' · ') }}</p>{% endif %}
+      </div>
+      <div class="auto-side">
+        <span class="badge confidence {{ 'confidence-low' if f.uncertain else 'confidence-ok' }}" title="Wie sicher die Entscheidung war">{{ f.confidence_pct }} %{% if f.uncertain %} · unsicher{% endif %}</span>
+        {% if f.reviewed %}
+        <span class="auto-reviewed" title="{{ f.review.user or '' }}">{{ icon('check') }}{{ f.review_label }}{% if f.review.at %} {{ m.time_tag(f.review.at) }}{% endif %}</span>
+        {% endif %}
+        {% if not f.gone %}
+        <div class="auto-actions">
+          {% if not f.reviewed %}
+          <form method="post" action="/eingang/automatisch/{{ f.doc_id|urlpart }}/passt">
+            {{ m.csrf() }}
+            <input type="hidden" name="after" value="{{ current_url }}">
+            <button class="btn btn-small{% if f.pending %} btn-primary{% endif %}" type="submit" aria-label="„{{ f.current_title }}“ passt">{{ icon('check') }} Passt</button>
+          </form>
+          {% endif %}
+          <a class="btn btn-ghost btn-small" href="{{ f.url }}" aria-label="„{{ f.current_title }}“ ändern">{{ icon('edit') }} Ändern</a>
+        </div>
+        {% endif %}
+      </div>
+    </li>
+  {% endfor %}
+  </ul>
+  {% elif filings %}
+    {% call m.empty_state('Nichts zu prüfen', 'inbox') %}
+      <p>Alle unsicheren Ablagen sind geprüft.</p>
+      <p><a href="/eingang/automatisch">Alle automatischen Ablagen anzeigen</a></p>
+    {% endcall %}
+  {% elif auto.enabled %}
+    {% call m.empty_state('Noch nichts automatisch abgelegt', 'shelf') %}
+      <p>Sobald DocuShelf ein Dokument selbst ablegt, steht es hier – mit Ordner, Sicherheit und Begründung.</p>
+    {% endcall %}
+  {% else %}
+    {% call m.empty_state('Automatische Ablage ist aus', 'shelf') %}
+      <p>Eingeschaltet legt DocuShelf Dokumente, die es sicher zuordnen kann, direkt ins Archiv. Jede Entscheidung erscheint dann hier und lässt sich korrigieren.</p>
+      <p class="muted">Einschalten über <span class="mono">DOCUSHELF_AUTO_FILE</span> (z. B. <span class="mono">sicher</span>), siehe <a href="/einstellungen#automatisch">Einstellungen</a>.</p>
+    {% endcall %}
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,62 @@
+[project]
+name = "docushelf"
+version = "0.1.0"
+description = "Folder-first document archive with OCR, inbox and full-text search"
+requires-python = ">=3.12"
+readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+keywords = ["document management", "archive", "ocr", "paperless", "self-hosted"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: FastAPI",
+  "Natural Language :: German",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business",
+]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "jinja2>=3.1",
+  "python-multipart>=0.0.9",
+  "itsdangerous>=2.2",
+  "authlib>=1.3",
+  "httpx>=0.27",
+  "pikepdf>=9.0",
+  "lxml>=5.0",
+  "anthropic>=1.0",
+  "pypdfium2>=4.30",
+  "pillow>=10.4",
+  "img2pdf>=0.5",
+  "watchdog>=5.0",
+  "pyyaml>=6.0",
+  "aiosmtpd>=1.4",
+  "ocrmypdf>=16.0",
+  "pillow-heif>=0.18",
+]
+
+[project.urls]
+Homepage = "https://github.com/xNycrofox/docushelf"
+Issues = "https://github.com/xNycrofox/docushelf/issues"
+Source = "https://github.com/xNycrofox/docushelf"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "reportlab>=4", "respx>=0.21"]
+
+[project.scripts]
+docushelf = "docushelf.cli:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["docushelf*"]
+
+[tool.setuptools.package-data]
+docushelf = ["templates/*.html", "templates/**/*.html", "static/*", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:authlib.*", "ignore:.*httpx.*:DeprecationWarning", "ignore:.*httpx2.*"]

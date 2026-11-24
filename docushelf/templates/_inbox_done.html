@@ -1,0 +1,19 @@
+{% import "_macros.html" as m with context %}
+<div class="alert alert-success">
+  {{ icon('check-circle') }}
+  <div>
+    <p><strong>Dieses Dokument wurde bereits {% if auto_done %}automatisch {% endif %}abgelegt{% if filed and filed.at %} ({{ m.time_tag(filed.at) }}){% endif %}.</strong></p>
+    {% if filed and filed.record %}
+    <p><a href="{{ document_url(filed.record.id) }}">{{ filed.record.title }}</a> in {{ m.folder_path(filed.record.folder) }}</p>
+    {% elif filed and filed.path %}
+    <p class="mono">{{ filed.path }}</p>
+    {% endif %}
+    {% if auto_done %}
+    <p class="auto-done" data-auto-done>{{ icon('wand') }} {% if auto_done.label %}Sicherheit {{ auto_done.label }}{% else %}Automatische Entscheidung{% endif %}{% if auto_done.review %} – als unsicher zum Prüfen markiert{% endif %}{% if auto_done.reasons %} · <span class="muted">{{ auto_done.reasons|join(' · ') }}</span>{% endif %}</p>
+    {% endif %}
+  </div>
+</div>
+<p class="button-row">
+  <a class="btn btn-ghost" href="/eingang">{{ icon('chevron-left') }} Zurück zum Eingang</a>
+  {% if auto_done %}<a class="btn btn-ghost" href="/eingang/automatisch">{{ icon('wand') }} Automatisch abgelegt</a>{% endif %}
+</p>

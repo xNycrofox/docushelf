@@ -1,0 +1,36 @@
+{% import "_macros.html" as m with context %}
+<section class="card processing-panel" data-watch-item="{{ item.id }}" data-poll="/api/v1/inbox?state=arbeit" aria-live="polite">
+  <div class="processing-art" aria-hidden="true">
+    <span class="sheet sheet-1"></span><span class="sheet sheet-2"></span><span class="sheet sheet-3"></span>
+  </div>
+  <div class="processing-copy">
+    <h2>{% if running %}Wird gerade verarbeitet …{% else %}Wartet auf Verarbeitung …{% endif %}</h2>
+    <p>Schritt {{ step.number }} von {{ step.total }}: <strong>{{ step.label }}</strong></p>
+    <ol class="steps">
+      {% for s in step.steps %}
+      <li class="step step-{{ s.state }}">
+        <span class="step-mark" aria-hidden="true">{% if s.state == 'done' %}{{ icon('check') }}{% endif %}</span>
+        <span>{{ s.label }}</span>
+        {% if s.state == 'done' %}<span class="visually-hidden">(erledigt)</span>{% elif s.state == 'current' %}<span class="visually-hidden">(läuft)</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    <p class="hint">Die Seite aktualisiert sich von selbst, sobald das Dokument fertig ist.</p>
+  </div>
+</section>
+
+{% if originals %}
+<section class="card">
+  <div class="card-head"><h2>{{ icon('file') }} Originaldateien</h2></div>
+  <ul class="file-list card-body">
+    {% for f in originals %}<li><a href="{{ f.url }}" download="{{ f.name }}">{{ icon('download') }} {{ f.name }}</a></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if log %}
+<details class="card log-card">
+  <summary class="card-head"><h2>{{ icon('clock') }} Verarbeitungsprotokoll</h2>{{ icon('chevron-down', 'disclosure-caret') }}</summary>
+  <pre class="log">{{ log }}</pre>
+</details>
+{% endif %}

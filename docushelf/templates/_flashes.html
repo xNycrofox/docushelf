@@ -1,0 +1,18 @@
+{% if flashes %}
+<div class="flashes" id="flashes">
+{% for f in flashes %}
+  {% set kind = f.category or 'info' %}
+  <div class="flash flash-{{ kind }}"{% if kind == 'error' %} role="alert"{% else %} role="status"{% endif %} data-autohide="{{ 'true' if kind == 'success' else 'false' }}">
+    {{ icon({'success': 'check-circle', 'error': 'alert-circle', 'warning': 'alert', 'info': 'info'}.get(kind, 'info'), 'flash-icon') }}
+    <p class="flash-text">{{ f.message }}{% if f.link %} <a href="{{ f.link }}">{{ f.link_label or 'Anzeigen' }}</a>{% endif %}</p>
+    {% if f.action %}
+    <form method="post" action="{{ f.action }}" class="flash-action">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-small btn-ghost" type="submit">{{ icon('restore') }} {{ f.action_label or 'Rückgängig' }}</button>
+    </form>
+    {% endif %}
+    <button type="button" class="flash-close" aria-label="Meldung schließen" data-dismiss>{{ icon('x') }}</button>
+  </div>
+{% endfor %}
+</div>
+{% endif %}

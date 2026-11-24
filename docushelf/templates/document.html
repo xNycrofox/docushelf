@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ doc.title }}{% endblock %}
+{% block content %}
+<script type="application/json" id="folders-data">{{ folders|script_json }}</script>
+<script type="application/json" id="tags-data">{{ tags|script_json }}</script>
+
+{{ m.breadcrumb(doc.folder, link_last=true) }}
+<header class="item-head">
+  <h1 class="item-title">{{ doc.title }}</h1>
+  <p class="item-meta">
+    {% if doc.doc_date %}<span>{{ icon('calendar') }}{{ doc.doc_date|date_de }}</span>{% endif %}
+    {% if doc.sender %}<span>{{ icon('building') }}{{ doc.sender }}</span>{% endif %}
+    {% if doc.page_count %}<span>{{ plural(doc.page_count, 'Seite', 'Seiten') }}</span>{% endif %}
+    <span>{{ doc.size|filesize }}</span>
+    {% for t in doc.tags %}<a class="chip chip-tag" href="{{ search_url(tag=t) }}">{{ icon('tag') }}{{ t }}</a>{% endfor %}
+  </p>
+</header>
+
+{% if not on_disk %}
+<div class="alert alert-warning">
+  {{ icon('alert') }}
+  <p>Die Datei wurde im Archiv nicht gefunden – vermutlich wurde sie gerade verschoben oder gelöscht. Der Index wird beim nächsten Abgleich aktualisiert.</p>
+</div>
+{% endif %}
+
+<div class="item-layout">
+  <section class="preview" aria-label="Vorschau">
+    {% if doc.is_pdf %}
+    <div class="preview-frame">
+      <iframe src="{{ file_url }}#view=FitH&amp;navpanes=0" data-preview-frame data-src="{{ file_url }}" title="Vorschau von „{{ doc.title }}“" loading="lazy"></iframe>
+    </div>
+    <a class="preview-first" href="{{ file_url }}" target="_blank" rel="noopener">
+      <img src="{{ page_url }}/1.png?w=700&amp;v={{ page_version }}" srcset="{{ page_url }}/1.png?w=700&amp;v={{ page_version }} 1x, {{ page_url }}/1.png?w=1400&amp;v={{ page_version }} 2x"
+           alt="Seite 1 von „{{ doc.title }}“" loading="lazy" decoding="async" width="700" height="990">
+    </a>
+    {% if preview_pages > 1 %}
+    <ol class="page-strip" aria-label="Seiten">
+      {% for n in range(1, preview_pages + 1) %}
+      <li>
+        <a class="page-thumb{% if n == 1 %} is-current{% endif %}" href="{{ page_url }}/{{ n }}.png?w=1400&amp;v={{ page_version }}" target="_blank" rel="noopener" data-page="{{ n }}" aria-label="Seite {{ n }}">
+          <img src="{{ page_url }}/{{ n }}.png?w=120&amp;v={{ page_version }}" srcset="{{ page_url }}/{{ n }}.png?w=120&amp;v={{ page_version }} 1x, {{ page_url }}/{{ n }}.png?w=240&amp;v={{ page_version }} 2x" alt="" loading="lazy" decoding="async" width="120" height="170">
+          <span class="page-number">{{ n }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+    {% elif is_image %}
+    <div class="preview-image"><img src="{{ file_url }}" alt="{{ doc.title }}" loading="lazy"></div>
+    {% else %}
+    <div class="preview-none">
+      {{ icon('file', 'preview-none-icon') }}
+      <p>Für <strong>{{ doc.ext|replace('.', '')|upper or 'diese Datei' }}</strong> gibt es keine Vorschau.</p>
+    </div>
+    {% endif %}
+    <p class="preview-links">
+      <a class="btn btn-ghost btn-small" href="{{ file_url }}?download=1" download="{{ doc.filename }}">{{ icon('download') }} Herunterladen</a>
+      {% if doc.is_pdf %}<a class="btn btn-ghost btn-small" href="{{ file_url }}" target="_blank" rel="noopener">{{ icon('external') }} In neuem Tab öffnen</a>{% endif %}
+    </p>
+  </section>
+
+  <div class="item-side">
+    {% if errors %}
+    <div class="alert alert-error" role="alert">{{ icon('alert-circle') }}<div>{% for e in errors %}<p>{{ e }}</p>{% endfor %}</div></div>
+    {% endif %}
+    {% if auto_notice %}
+    <div class="alert {{ 'alert-warning' if auto_notice.uncertain else 'alert-info' }} auto-notice" data-auto-notice>
+      {{ icon('wand') }}
+      <div class="auto-notice-text">
+        <p><strong>Automatisch abgelegt ({{ auto_notice.label }})</strong>{% if auto_notice.uncertain %} – bitte prüfen{% endif %}</p>
+        <p class="hint">Stimmt etwas nicht? Ändere unten Titel oder Ordner und speichere – die Datei wird dann umbenannt oder verschoben.</p>
+      </div>
+      <form class="auto-notice-action" method="post" action="/eingang/automatisch/{{ doc.id|urlpart }}/passt">
+        {{ m.csrf() }}
+        <input type="hidden" name="after" value="{{ document_url(doc.id) }}">
+        <button class="btn btn-small" type="submit">{{ icon('check') }} Passt</button>
+      </form>
+    </div>
+    {% endif %}
+    {% if protection_notice %}
+    <div class="alert alert-info" data-protection>{{ icon('lock') }}<p>{{ protection_notice }}</p></div>
+    {% endif %}
+
+    <form class="card" method="post" action="/dokument/{{ doc.id|urlpart }}/bearbeiten" data-filing-form>
+      {{ m.csrf() }}
+      {# What the page showed: only fields changed here are saved, so edits made meanwhile are kept. #}
+      {% for key, value in original.items() %}<input type="hidden" name="orig_{{ key }}" value="{{ value }}">{% endfor %}
+      <div class="card-head"><h2>{{ icon('edit') }} Angaben</h2></div>
+      <div class="card-body stack">
+        <div class="field">
+          <label for="d-title">Titel</label>
+          <input id="d-title" class="input" type="text" name="title" value="{{ form.title }}" required maxlength="150" data-title-input>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="d-date">Datum</label>
+            <input id="d-date" class="input" type="date" name="doc_date" value="{{ form.doc_date }}" data-date-input>
+          </div>
+          {% if editable_meta %}
+          <div class="field">
+            <label for="d-sender">Absender <span class="optional">optional</span></label>
+            <input id="d-sender" class="input" type="text" name="sender" value="{{ form.sender }}" list="d-sender-list" autocomplete="off">
+            <datalist id="d-sender-list">{% for s in senders %}<option value="{{ s }}"></option>{% endfor %}</datalist>
+          </div>
+          {% endif %}
+        </div>
+        {% if editable_meta %}{{ m.tag_field('d-tags', form.tags) }}{% endif %}
+        {{ m.folder_field('d-folder', form.folder, label='Ordner', required=false, hint='Zum Verschieben einen anderen Ordner wählen.') }}
+        <p class="hint">Dateiname: <span class="mono" data-filename-preview data-ext="{{ doc.ext }}">{{ doc.filename }}</span></p>
+        {% if not doc.is_pdf %}<p class="hint">Bei {{ doc.ext|replace('.', '')|upper }}-Dateien lassen sich nur Titel, Datum und Ordner ändern.</p>{% endif %}
+      </div>
+      <div class="card-foot form-actions">
+        <button class="btn btn-primary" type="submit">{{ icon('check') }} Speichern <kbd class="kbd-hint" data-shortcut-hint>Strg + Enter</kbd></button>
+      </div>
+    </form>
+
+    <div class="item-actions">
+      <form method="post" action="/dokument/{{ doc.id|urlpart }}/loeschen" data-confirm="„{{ doc.title }}“ in den Papierkorb verschieben? Die Datei verschwindet dann aus dem Archivordner." data-confirm-ok="In den Papierkorb">
+        {{ m.csrf() }}
+        <button class="btn btn-ghost btn-danger-text" type="submit">{{ icon('trash') }} In den Papierkorb</button>
+      </form>
+    </div>
+
+    {% if extras %}
+    <section class="card facts-card" aria-labelledby="extras-title" data-extras>
+      <div class="card-head"><h2 id="extras-title">{{ icon('archive') }} Weitere Angaben</h2></div>
+      <div class="card-body">
+        <dl class="facts">
+          {% for entry in extras %}
+          <div class="fact">
+            <dt>{{ icon(entry.icon) }}{{ entry.label }}</dt>
+            <dd class="fact-lines">{% for value in entry["values"] %}<p>{{ value }}</p>{% endfor %}</dd>
+          </div>
+          {% endfor %}
+        </dl>
+        <p class="hint">Gespeichert in den XMP-Metadaten der Datei.</p>
+      </div>
+    </section>
+    {% endif %}
+
+    <details class="card tech-card">
+      <summary class="card-head"><h2>{{ icon('sliders') }} Technische Details</h2>{{ icon('chevron-down', 'disclosure-caret') }}</summary>
+      <dl class="kv card-body">
+        <div><dt>Pfad</dt><dd class="mono break">{{ doc.path }}</dd></div>
+        <div><dt>Dokument-ID</dt><dd class="mono break">{{ doc.id }}{% if provisional %} <span class="badge badge-muted" title="Die ID stammt aus dem Inhalts-Hash. Beim ersten Bearbeiten bekommt die Datei eine feste ID in den XMP-Metadaten.">vorläufig</span>{% endif %}</dd></div>
+        <div><dt>XMP-Metadaten</dt><dd>{% if doc.has_xmp %}{{ icon('check') }} vorhanden{% else %}keine – Datei wurde von außen abgelegt{% endif %}</dd></div>
+        <div><dt>Inhalts-Hash (SHA-256)</dt><dd class="mono break">{{ doc.content_hash }}</dd></div>
+        {% if doc.origin_hash %}<div><dt>Ursprungs-Hash</dt><dd class="mono break">{{ doc.origin_hash }}</dd></div>{% endif %}
+        <div><dt>Text</dt><dd>{{ text_status }}</dd></div>
+        <div><dt>Größe</dt><dd>{{ doc.size|filesize }} ({{ doc.size|number }} Bytes)</dd></div>
+        <div><dt>Indexiert</dt><dd>{{ m.time_tag(doc.indexed_at, 'datetime') }}</dd></div>
+      </dl>
+    </details>
+
+    {% if text_pages %}
+    <details class="card text-card">
+      <summary class="card-head"><h2>{{ icon('file-text') }} Erkannter Text</h2>{{ icon('chevron-down', 'disclosure-caret') }}</summary>
+      <div class="card-body text-pages">
+        {% for p in text_pages %}
+        <section class="text-page" id="text-{{ p.number }}">
+          <h3>Seite {{ p.number }}</h3>
+          <pre class="page-text">{{ p.text }}{% if p.cut %} …{% endif %}</pre>
+        </section>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

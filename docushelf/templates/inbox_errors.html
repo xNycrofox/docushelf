@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Fehler · Eingang{% endblock %}
+{% block content %}
+<a class="back-link" href="/eingang">{{ icon('chevron-left') }} Eingang</a>
+<div class="page-head">
+  <div>
+    <h1>Fehler im Eingang</h1>
+    <p class="page-sub">
+      {% if failed %}{{ plural(failed|length, 'Dokument konnte', 'Dokumente konnten') }} nicht verarbeitet werden. Die Originale sind sicher aufbewahrt.
+      {% else %}Keine Fehler – alles läuft rund.{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if failed %}
+<ul class="error-list">
+{% for entry in failed %}
+  {% set card = entry.card %}
+  <li class="card error-card">
+    <div class="card-head">
+      <h2 class="error-card-title"><a href="{{ card.url }}">{{ card.title }}</a></h2>
+      <p class="item-meta">{{ m.source_badge(card.source) }} <span>eingegangen {{ m.time_tag(card.received_at) }}</span></p>
+    </div>
+    <div class="card-body stack">
+      <div class="alert alert-error">
+        {{ icon('alert-circle') }}
+        <div>
+          <p><strong>{{ entry.error.label or 'Verarbeitung' }}:</strong> {{ entry.error.message or 'Unbekannter Fehler.' }}</p>
+          {% if entry.error.at %}<p class="muted">{{ m.time_tag(entry.error.at, 'datetime') }}</p>{% endif %}
+        </div>
+      </div>
+      {% if entry.log %}
+      <details class="log-details">
+        <summary>Protokoll anzeigen</summary>
+        <pre class="log">{{ entry.log }}</pre>
+      </details>
+      {% endif %}
+      <div class="button-row">
+        <form class="retry-form-inline" method="post" action="/eingang/{{ card.id }}/neu-verarbeiten">
+          {{ m.csrf() }}
+          <input type="hidden" name="after" value="/eingang/fehler">
+          <label class="checkbox checkbox-small"><input type="checkbox" name="skip_blank_removal" value="1"{% if entry.item.options.skip_blank_removal %} checked{% endif %}> <span>ohne Leerseitenentfernung</span></label>
+          <label class="checkbox checkbox-small"><input type="checkbox" name="skip_ocr" value="1"{% if entry.item.options.skip_ocr %} checked{% endif %}> <span>ohne OCR</span></label>
+          <button class="btn btn-primary btn-small" type="submit">{{ icon('refresh') }} Erneut verarbeiten</button>
+        </form>
+        {% for f in entry.originals %}<a class="btn btn-ghost btn-small" href="{{ f.url }}" download="{{ f.name }}">{{ icon('download') }} {{ f.name }}</a>{% endfor %}
+        <form method="post" action="/eingang/{{ card.id }}/loeschen" data-confirm="„{{ card.title }}“ in den Papierkorb verschieben?" data-confirm-ok="In den Papierkorb">
+          {{ m.csrf() }}
+          <input type="hidden" name="after" value="/eingang/fehler">
+          <button class="btn btn-ghost btn-small btn-danger-text" type="submit">{{ icon('trash') }} Löschen</button>
+        </form>
+      </div>
+    </div>
+  </li>
+{% endfor %}
+</ul>
+{% else %}
+  {% call m.empty_state('Keine Fehler', 'inbox') %}
+    <p>Alle Dokumente wurden sauber verarbeitet.</p>
+    <p><a class="btn btn-ghost" href="/eingang">Zum Eingang</a></p>
+  {% endcall %}
+{% endif %}
+{% endblock %}

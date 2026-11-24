@@ -1,0 +1,40 @@
+{% import "_macros.html" as m with context %}
+{% set error = item.error or {} %}
+<div class="alert alert-error" role="alert">
+  {{ icon('alert-circle') }}
+  <div>
+    <p><strong>Verarbeitung fehlgeschlagen{% if error.label %} bei „{{ error.label }}“{% endif %}.</strong></p>
+    <p>{{ error.message or 'Unbekannter Fehler.' }}</p>
+    {% if error.at %}<p class="muted">{{ m.time_tag(error.at, 'datetime') }}</p>{% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>{{ icon('refresh') }} Was jetzt?</h2></div>
+  <div class="card-body stack">
+    <p>Das Original ist sicher aufbewahrt. Du kannst die Verarbeitung erneut starten – zum Beispiel ohne Leerseitenentfernung oder ohne Texterkennung –, das Original herunterladen oder das Dokument löschen.</p>
+    <form class="retry-form" method="post" action="/eingang/{{ item.id }}/neu-verarbeiten">
+      {{ m.csrf() }}
+      <div class="retry-options">
+        <label class="checkbox"><input type="checkbox" name="skip_blank_removal" value="1"{% if item.options.skip_blank_removal %} checked{% endif %}> <span>ohne Leerseitenentfernung</span></label>
+        <label class="checkbox"><input type="checkbox" name="skip_ocr" value="1"{% if item.options.skip_ocr %} checked{% endif %}> <span>ohne Texterkennung (OCR)</span></label>
+      </div>
+      <button class="btn btn-primary" type="submit">{{ icon('refresh') }} Erneut verarbeiten</button>
+    </form>
+    <div class="button-row">
+      {% for f in originals %}<a class="btn btn-ghost" href="{{ f.url }}" download="{{ f.name }}">{{ icon('download') }} {{ f.name }}</a>{% endfor %}
+      <form method="post" action="/eingang/{{ item.id }}/loeschen" data-confirm="„{{ title }}“ in den Papierkorb verschieben?" data-confirm-ok="In den Papierkorb">
+        {{ m.csrf() }}
+        <input type="hidden" name="after" value="/eingang/fehler">
+        <button class="btn btn-ghost btn-danger-text" type="submit">{{ icon('trash') }} Löschen</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% if log %}
+<details class="card log-card" open>
+  <summary class="card-head"><h2>{{ icon('clock') }} Protokoll</h2>{{ icon('chevron-down', 'disclosure-caret') }}</summary>
+  <pre class="log">{{ log }}</pre>
+</details>
+{% endif %}

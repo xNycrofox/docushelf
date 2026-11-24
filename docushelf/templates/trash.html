@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Papierkorb{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Papierkorb</h1>
+    <p class="page-sub">
+      {% if retention_days > 0 %}Gelöschtes bleibt {{ retention_days }} Tage hier und wird danach automatisch endgültig entfernt.
+      {% else %}Gelöschtes bleibt hier, bis du es endgültig löschst.{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if entries %}
+<ul class="trash-list">
+  {% for row in entries %}
+  {% set e = row.entry %}
+  <li class="card trash-item">
+    <span class="trash-icon" aria-hidden="true">{{ icon('file-text' if e.kind == 'document' else 'inbox') }}</span>
+    <div class="trash-body">
+      <h2 class="trash-title">{{ e.title or 'Ohne Titel' }}</h2>
+      <p class="trash-meta">
+        {% if e.kind == 'document' %}
+          <span>aus {{ m.folder_path(e.folder, link=false) }}</span>
+        {% else %}
+          <span>aus dem Eingang</span>
+        {% endif %}
+        <span>gelöscht {{ m.time_tag(e.deleted_at) }}{% if e.deleted_by %} von {{ e.deleted_by }}{% endif %}</span>
+        {% if row.expires %}<span class="trash-expiry">wird {{ m.time_tag(row.expires) }} endgültig gelöscht</span>{% endif %}
+      </p>
+    </div>
+    <div class="trash-actions">
+      <form method="post" action="/papierkorb/{{ e.id }}/wiederherstellen">
+        {{ m.csrf() }}
+        <input type="hidden" name="after" value="/papierkorb">
+        <button class="btn btn-small" type="submit">{{ icon('restore') }} Wiederherstellen</button>
+      </form>
+      <form method="post" action="/papierkorb/{{ e.id }}/loeschen" data-confirm="„{{ e.title or 'Ohne Titel' }}“ endgültig löschen? Das lässt sich nicht rückgängig machen." data-confirm-ok="Endgültig löschen" data-confirm-danger>
+        {{ m.csrf() }}
+        <button class="btn btn-ghost btn-small btn-danger-text" type="submit">{{ icon('x') }} Endgültig löschen</button>
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+  {% call m.empty_state('Der Papierkorb ist leer', 'trash') %}
+    <p>Blitzblank. Gelöschte Dokumente landen zuerst hier und lassen sich wiederherstellen.</p>
+  {% endcall %}
+{% endif %}
+{% endblock %}

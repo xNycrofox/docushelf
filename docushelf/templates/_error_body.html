@@ -1,0 +1,16 @@
+{% import "_illustrations.html" as ill %}
+{% set code = status_code or 500 %}
+<div class="error-page">
+  {{ ill.draw('search' if code == 404 else 'error') }}
+  <p class="error-code">Fehler {{ code }}</p>
+  <h1 class="error-title">{{ title or ('Nicht gefunden' if code == 404 else 'Da ist etwas schiefgelaufen') }}</h1>
+  <p class="error-message">{{ message or ('Diese Seite gibt es nicht.' if code == 404 else 'Bitte versuche es gleich noch einmal. Wenn der Fehler bleibt, hilft ein Blick ins Server-Protokoll.') }}</p>
+  <div class="error-actions">
+    {% if user %}
+    <a class="btn btn-primary" href="/eingang">{{ icon('inbox') }} Zum Eingang</a>
+    <a class="btn btn-ghost" href="/suche">{{ icon('search') }} Suche</a>
+    {% else %}
+    <a class="btn btn-primary" href="/login">{{ icon('lock') }} Zur Anmeldung</a>
+    {% endif %}
+  </div>
+</div>

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ title }} · Eingang{% endblock %}
+{% block head %}{% if item.state == 'arbeit' %}<noscript><meta http-equiv="refresh" content="5"></noscript>{% endif %}{% endblock %}
+{% block content %}
+<div class="item-nav">
+  <a class="back-link" href="{{ '/eingang/fehler' if item.state == 'fehler' else '/eingang' }}">{{ icon('chevron-left') }} {{ 'Fehler' if item.state == 'fehler' else 'Eingang' }}</a>
+  {% if position %}
+  <nav class="pager" aria-label="Blättern im Eingang">
+    {% if prev_id %}<a class="btn btn-icon btn-ghost" href="/eingang/{{ prev_id }}" rel="prev" aria-label="Vorheriges Dokument">{{ icon('chevron-left') }}</a>{% else %}<span class="btn btn-icon btn-ghost is-disabled" aria-hidden="true">{{ icon('chevron-left') }}</span>{% endif %}
+    <span class="pager-info">{{ position }} von {{ total }}</span>
+    {% if next_id %}<a class="btn btn-icon btn-ghost" href="/eingang/{{ next_id }}" rel="next" aria-label="Nächstes Dokument">{{ icon('chevron-right') }}</a>{% else %}<span class="btn btn-icon btn-ghost is-disabled" aria-hidden="true">{{ icon('chevron-right') }}</span>{% endif %}
+  </nav>
+  {% endif %}
+</div>
+
+<header class="item-head">
+  <h1 class="item-title">{{ title }}</h1>
+  <p class="item-meta">
+    {{ m.source_badge(item.source) }}
+    <span>eingegangen {{ m.time_tag(item.received_at) }}</span>
+    {% if item.page_count %}<span>{{ plural(item.page_count, 'Seite', 'Seiten') }}</span>{% endif %}
+  </p>
+</header>
+
+{% if item.state == 'bereit' %}
+  {% include "_inbox_ready.html" %}
+{% elif item.state == 'arbeit' %}
+  {% include "_inbox_processing.html" %}
+{% elif item.state == 'fehler' %}
+  {% include "_inbox_failed.html" %}
+{% else %}
+  {% include "_inbox_done.html" %}
+{% endif %}
+{% endblock %}

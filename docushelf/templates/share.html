@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Dateien teilen{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Dateien teilen</h1>
+    <p class="page-sub">Hier landen PDFs und Fotos, die du auf dem Handy über „Teilen“ an DocuShelf schickst. Nach dem Hochladen erscheinen sie im Eingang.</p>
+  </div>
+</div>
+
+{% if notice %}
+<div class="alert alert-{{ notice.category }}" role="{{ 'alert' if notice.category == 'error' else 'status' }}">
+  {{ icon('alert-circle' if notice.category == 'error' else 'alert') }}
+  <p>{{ notice.message }}</p>
+</div>
+{% endif %}
+
+<section class="upload" aria-labelledby="share-title" data-share data-api="/api/v1/upload" data-cache="{{ share_cache }}" data-max-mb="{{ max_upload_mb }}">
+  <div data-share-message hidden></div>
+  <div class="dropzone" data-share-zone>
+    <div class="dropzone-inner">
+      <span class="dropzone-icon" aria-hidden="true">{{ icon('upload') }}</span>
+      <div class="dropzone-copy">
+        <h2 id="share-title" class="dropzone-title">Geteilte Dateien <span class="count" data-share-count hidden></span></h2>
+        <p class="dropzone-text" data-share-status aria-live="polite" hidden></p>
+        <noscript><p class="dropzone-text">Zum Anzeigen geteilter Dateien braucht diese Seite JavaScript. Ohne JavaScript lädst du Dateien im <a href="/eingang">Eingang</a> hoch.</p></noscript>
+      </div>
+      <div class="dropzone-pickers" data-share-done hidden>
+        <a class="btn btn-primary" href="/eingang">{{ icon('inbox') }} Zum Eingang</a>
+      </div>
+    </div>
+    <ul class="upload-list" data-share-list hidden></ul>
+    <div class="upload-actions" data-share-actions hidden>
+      <label class="checkbox" data-combine-option data-share-combine hidden>
+        <input type="checkbox" name="combine" value="1">
+        <span>Bilder zu einem Dokument zusammenfügen</span>
+      </label>
+      <button class="btn btn-ghost" type="button" data-share-discard>{{ icon('trash') }} Verwerfen</button>
+      <button class="btn btn-primary" type="button" data-share-upload>{{ icon('upload') }} Hochladen</button>
+    </div>
+    <div class="upload-progress" data-share-progress hidden>
+      <progress class="progress" max="100" value="0" aria-label="Fortschritt beim Hochladen"></progress>
+      <span class="upload-progress-text" aria-live="polite"></span>
+    </div>
+  </div>
+</section>
+
+<section class="section card" aria-labelledby="share-help-title" data-share-help>
+  <div class="card-head"><h2 id="share-help-title">{{ icon('info') }} So schickst du Dateien an DocuShelf</h2></div>
+  <div class="card-body">
+    {% include "_share_help.html" %}
+  </div>
+</section>
+{% endblock %}

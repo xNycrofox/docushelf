@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{% if folder %}{{ folder_name }} · {% endif %}Archiv{% endblock %}
+
+{% macro render_tree(nodes) -%}
+<ul class="tree-list">
+{% for node in nodes %}
+  <li>
+  {% if node.children %}
+    <details class="tree-node"{% if node.open or node.current %} open{% endif %}>
+      <summary>
+        <a class="tree-link{% if node.current %} is-current{% endif %}" href="{{ node.url }}"{% if node.current %} aria-current="page"{% endif %}>
+          {{ icon('folder') }}<span class="tree-name">{{ node.name }}</span><span class="tree-count">{{ node.total }}</span>
+        </a>
+      </summary>
+      {{ render_tree(node.children) }}
+    </details>
+  {% else %}
+    <a class="tree-link tree-leaf{% if node.current %} is-current{% endif %}" href="{{ node.url }}"{% if node.current %} aria-current="page"{% endif %}>
+      {{ icon('folder') }}<span class="tree-name">{{ node.name }}</span><span class="tree-count">{{ node.total }}</span>
+    </a>
+  {% endif %}
+  </li>
+{% endfor %}
+</ul>
+{%- endmacro %}
+
+{% block content %}
+<div class="archive-layout">
+  <aside class="archive-tree" aria-label="Ordnerbaum">
+    <details class="tree-panel" open>
+      <summary class="tree-panel-head">{{ icon('archive') }} Ordner {{ icon('chevron-down', 'disclosure-caret') }}</summary>
+      <a class="tree-link tree-root{% if not folder %} is-current{% endif %}" href="/archiv"{% if not folder %} aria-current="page"{% endif %}>{{ icon('archive') }}<span class="tree-name">Archiv</span></a>
+      {% if tree %}{{ render_tree(tree) }}{% else %}<p class="muted tree-empty">Noch keine Ordner.</p>{% endif %}
+    </details>
+  </aside>
+
+  <div class="archive-main">
+    {{ m.breadcrumb(folder) }}
+    <div class="page-head">
+      <div>
+        <h1>{{ icon('folder-open', 'title-icon') if folder else icon('archive', 'title-icon') }}{{ folder_name }}</h1>
+        <p class="page-sub">
+          {% if total_count %}{{ plural(total_count, 'Dokument', 'Dokumente') }}{% if total_count != direct_count %}, davon {{ direct_count }} direkt hier{% endif %}{% else %}Noch keine Dokumente{% endif %}
+          {% if subfolders %} · {{ plural(subfolders|length, 'Unterordner', 'Unterordner') }}{% endif %}
+        </p>
+      </div>
+      <div class="page-actions">
+        <nav class="view-toggle" aria-label="Ansicht" data-view-toggle>
+          {% for key, label, icon_name in (('kacheln', 'Kacheln', 'grid'), ('liste', 'Liste', 'list')) %}
+          <a class="view-toggle-btn{% if view == key %} is-active{% endif %}" href="{{ archive_url(folder) }}?ansicht={{ key }}{% if sort != 'date_desc' %}&amp;sort={{ sort }}{% endif %}" data-view="{{ key }}" aria-current="{{ 'true' if view == key else 'false' }}">{{ icon(icon_name) }}<span>{{ label }}</span></a>
+          {% endfor %}
+        </nav>
+        <details class="popover">
+          <summary class="btn btn-ghost">{{ icon('folder-plus') }} Neuer Ordner</summary>
+          <form class="popover-body stack" method="post" action="/archiv/ordner/neu">
+            {{ m.csrf() }}
+            <input type="hidden" name="parent" value="{{ folder }}">
+            <div class="field">
+              <label for="new-folder-name">Name{% if folder %} (in „{{ folder_name }}“){% endif %}</label>
+              <input id="new-folder-name" class="input" type="text" name="name" required maxlength="120" placeholder="z. B. Versicherungen">
+            </div>
+            <button class="btn btn-primary btn-small" type="submit">{{ icon('plus') }} Anlegen</button>
+          </form>
+        </details>
+        {% if folder %}
+        <details class="popover">
+          <summary class="btn btn-ghost">{{ icon('edit') }} Umbenennen</summary>
+          <form class="popover-body stack" method="post" action="/archiv/ordner/umbenennen">
+            {{ m.csrf() }}
+            <input type="hidden" name="path" value="{{ folder }}">
+            <div class="field">
+              <label for="rename-folder">Neuer Name</label>
+              <input id="rename-folder" class="input" type="text" name="name" value="{{ folder_name }}" required maxlength="120">
+            </div>
+            <p class="hint">Der Ordner wird auch im Dateisystem umbenannt.</p>
+            <button class="btn btn-primary btn-small" type="submit">Umbenennen</button>
+          </form>
+        </details>
+        {% if is_empty %}
+        <form method="post" action="/archiv/ordner/loeschen" data-confirm="Den leeren Ordner „{{ folder_name }}“ löschen?" data-confirm-ok="Ordner löschen">
+          {{ m.csrf() }}
+          <input type="hidden" name="path" value="{{ folder }}">
+          <button class="btn btn-ghost btn-danger-text" type="submit">{{ icon('trash') }} Löschen</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    {% macro page_url(n) %}{{ archive_url(folder) }}?sort={{ sort }}&amp;seite={{ n }}{% endmacro %}
+    <div class="view-panel" data-view-panel="kacheln"{% if view != 'kacheln' %} hidden{% endif %}>
+      {% if subfolders %}
+      <ul class="folder-grid" aria-label="Unterordner">
+        {% for sub in subfolders %}
+        <li>
+          <a class="folder-card" href="{{ sub.url }}">
+            <span class="folder-card-icon" aria-hidden="true">{{ icon('folder') }}</span>
+            <span class="folder-card-name">{{ sub.name }}</span>
+            <span class="folder-card-meta">{{ plural(sub.total, 'Dokument', 'Dokumente') }}{% if sub.children %} · {{ plural(sub.children, 'Ordner', 'Ordner') }}{% endif %}</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      {% if docs %}
+      <section class="section" aria-labelledby="docs-title">
+        <div class="section-head">
+          <h2 id="docs-title">Dokumente{% if folder %} in „{{ folder_name }}“{% endif %}</h2>
+          <form class="sort-form" method="get" action="{{ archive_url(folder) }}">
+            <label class="visually-hidden" for="sort">Sortierung</label>
+            <select id="sort" class="select select-small" name="sort" data-autosubmit>
+              {% for key, label in sorts.items() %}<option value="{{ key }}"{% if key == sort %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            <noscript><button class="btn btn-small" type="submit">Sortieren</button></noscript>
+          </form>
+        </div>
+        <table class="doc-table">
+          <thead>
+            <tr><th scope="col">Datum</th><th scope="col">Titel</th><th scope="col">Absender</th><th scope="col">Tags</th></tr>
+          </thead>
+          <tbody>
+          {% for doc in docs %}
+            <tr>
+              <td class="doc-date">{% if doc.doc_date %}<time datetime="{{ doc.doc_date|iso }}">{{ doc.doc_date|date_de }}</time>{% else %}<span class="muted">–</span>{% endif %}</td>
+              <td class="doc-title">
+                <a href="{{ document_url(doc.id) }}">{{ icon('file-text' if doc.is_pdf else 'file') }}<span>{{ doc.title }}</span></a>
+                {% if not doc.is_pdf %}<span class="badge badge-muted">{{ doc.ext|replace('.', '')|upper }}</span>{% endif %}
+              </td>
+              <td class="doc-sender">{{ doc.sender or '' }}</td>
+              <td class="doc-tags">{% for t in doc.tags %}<a class="chip chip-tag" href="{{ search_url(tag=t) }}">{{ t }}</a>{% endfor %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {{ m.pagination(page, has_more, page_url) }}
+      </section>
+      {% endif %}
+    </div>
+
+    <div class="view-panel" data-view-panel="liste"{% if view != 'liste' %} hidden{% endif %}>
+    {% if list_folders or docs %}
+      <table class="list-table">
+        <caption class="visually-hidden">Inhalt von „{{ folder_name }}“: zuerst Ordner, dann Dokumente</caption>
+        <thead>
+          <tr>
+            {% for key, label, cls in (('name', 'Name', 'col-name'), ('date', 'Datum', 'col-date')) %}
+            {% set column = list_sorting[key] %}
+            <th scope="col" class="{{ cls }}"{% if column.state %} aria-sort="{{ column.state }}"{% endif %}>
+              <a href="{{ archive_url(folder) }}?sort={{ column.next }}" title="{{ label }}: {{ 'umgekehrt sortieren' if column.state else 'danach sortieren' }}">{{ label }}{% if column.state %}{{ icon('chevron-down', 'sort-icon' ~ (' is-asc' if column.state == 'ascending' else '')) }}{% endif %}</a>
+            </th>
+            {% endfor %}
+            <th scope="col" class="col-sender">Absender</th>
+            <th scope="col" class="col-size">Größe / Inhalt</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for sub in list_folders %}
+          <tr class="list-folder" data-row-link>
+            <td class="col-name"><a href="{{ sub.url }}" data-row-main>{{ icon('folder') }}<span class="list-label">{{ sub.name }}</span></a></td>
+            <td class="col-date">{% if sub.newest %}<time datetime="{{ sub.newest|iso }}" title="Neuestes Dokument darin">{{ sub.newest|date_de }}</time>{% else %}<span class="muted">–</span>{% endif %}</td>
+            <td class="col-sender"></td>
+            <td class="col-size">{{ plural(sub.total, 'Dokument', 'Dokumente') }}{% if sub.children %} · {{ plural(sub.children, 'Ordner', 'Ordner') }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        {% for doc in docs %}
+          <tr class="list-doc" data-row-link>
+            <td class="col-name"><a href="{{ document_url(doc.id) }}" title="{{ doc.filename }}" data-row-main>{{ icon('file-text' if doc.is_pdf else 'file') }}<span class="list-label">{{ doc.title }}</span></a>{% if not doc.is_pdf %} <span class="badge badge-muted">{{ doc.ext|replace('.', '')|upper }}</span>{% endif %}</td>
+            <td class="col-date">{% if doc.doc_date %}<time datetime="{{ doc.doc_date|iso }}">{{ doc.doc_date|date_de }}</time>{% else %}<span class="muted">–</span>{% endif %}</td>
+            <td class="col-sender">{{ doc.sender or '' }}</td>
+            <td class="col-size">{{ doc.size|filesize }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {{ m.pagination(page, has_more, page_url) }}
+    {% endif %}
+    </div>
+
+    {% if is_empty %}
+      {% call m.empty_state('Dieser Ordner ist leer', 'folder') %}
+        <p>Lege Dokumente aus dem Eingang hier ab oder kopiere Dateien direkt per Explorer oder Finder hinein – DocuShelf bemerkt das von selbst.</p>
+      {% endcall %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

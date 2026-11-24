@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{% if q %}„{{ q }}“ · {% endif %}Suche{% endblock %}
+{% block content %}
+<script type="application/json" id="folders-data">{{ folders|script_json }}</script>
+<script type="application/json" id="tags-data">{{ tags|script_json }}</script>
+
+<form class="search-form" method="get" action="/suche" role="search">
+  <h1 class="visually-hidden">Suche</h1>
+  <div class="search-box">
+    {{ icon('search', 'search-box-icon') }}
+    <label class="visually-hidden" for="search-q">Suchbegriff</label>
+    <input id="search-q" class="input input-large" type="search" name="q" value="{{ q }}" placeholder="Wonach suchst du? z. B. Nebenkosten 2025" autocomplete="off" autofocus data-suggest>
+    <button class="btn btn-primary" type="submit">Suchen</button>
+  </div>
+
+  <details class="search-filters"{% if filters_active %} open{% endif %}>
+    <summary>{{ icon('filter') }} Filter{% if filters_active %} <span class="badge badge-accent">aktiv</span>{% endif %}</summary>
+    <div class="filter-grid">
+      <div class="field">
+        <label for="filter-folder">Ordner (mit Unterordnern)</label>
+        <div class="combobox" data-combobox data-source="folders-data" data-no-create>
+          {{ icon('folder', 'field-icon') }}
+          <input id="filter-folder" class="input input-with-icon" type="text" name="ordner" value="{{ filters.ordner }}" list="filter-folder-list" autocomplete="off" placeholder="alle Ordner">
+          <datalist id="filter-folder-list">{% for f in folders %}<option value="{{ f }}"></option>{% endfor %}</datalist>
+        </div>
+      </div>
+      <div class="field">
+        <label for="filter-from">Datum ab</label>
+        <input id="filter-from" class="input" type="date" name="ab" value="{{ filters.ab }}">
+      </div>
+      <div class="field">
+        <label for="filter-to">Datum bis</label>
+        <input id="filter-to" class="input" type="date" name="bis" value="{{ filters.bis }}">
+      </div>
+      <div class="field">
+        <label for="filter-tags">Tags</label>
+        <input id="filter-tags" class="input" type="text" name="tag" value="{{ filters.tags }}" data-tag-input data-source="tags-data" autocomplete="off" placeholder="alle Tags">
+      </div>
+      <div class="field">
+        <label for="filter-sender">Absender</label>
+        <input id="filter-sender" class="input" type="text" name="absender" value="{{ filters.absender }}" list="filter-sender-list" autocomplete="off" placeholder="alle Absender">
+        <datalist id="filter-sender-list">{% for s in senders %}<option value="{{ s }}"></option>{% endfor %}</datalist>
+      </div>
+      <div class="filter-actions">
+        <button class="btn btn-primary btn-small" type="submit">Filter anwenden</button>
+        {% if filters_active %}<a class="btn btn-ghost btn-small" href="{{ search_url(q=q) }}">Filter zurücksetzen</a>{% endif %}
+      </div>
+    </div>
+  </details>
+</form>
+
+{% for note in notes %}
+<div class="alert alert-warning">{{ icon('alert') }}<p>{{ note }}</p></div>
+{% endfor %}
+
+{% if result is not none %}
+  <p class="result-info" aria-live="polite">
+    {% if result.total %}<strong>{{ plural(result.total, 'Treffer', 'Treffer') }}</strong>{% else %}Keine Treffer{% endif %}
+    <span class="muted">· {{ result.took_ms }} ms</span>
+  </p>
+
+  {% if corrections %}
+  <div class="alert alert-info did-you-mean">
+    {{ icon('sparkle') }}
+    <div>
+    {% for c in corrections %}
+      <p>Für „{{ c.term }}“ gab es keine Treffer – gesucht wurde stattdessen nach ähnlichen Wörtern.
+        Meintest du {% for o in c.options %}<a href="{{ o.url }}">{{ o.word }}</a>{% if not loop.last %}, {% endif %}{% endfor %}?</p>
+    {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if hits %}
+  <ol class="hits">
+    {% for hit in hits %}
+    <li class="hit card">
+      <div class="hit-head">
+        <h2 class="hit-title"><a href="{{ hit.url }}">{{ icon('file-text' if hit.doc.is_pdf else 'file') }}{{ hit.doc.title }}</a></h2>
+        <p class="hit-meta">
+          {% if hit.doc.doc_date %}<span>{{ icon('calendar') }}{{ hit.doc.doc_date|date_de }}</span>{% endif %}
+          {{ m.folder_path(hit.doc.folder) }}
+          {% if hit.doc.sender %}<span>{{ icon('building') }}{{ hit.doc.sender }}</span>{% endif %}
+          {% for t in hit.doc.tags %}<span class="chip chip-tag">{{ t }}</span>{% endfor %}
+        </p>
+      </div>
+      {% if hit.snippets %}
+      <ul class="snippets">
+        {% for s in hit.snippets %}
+        <li><a class="snippet" href="{{ s.url }}">{% if s.page %}<span class="snippet-page">S. {{ s.page }}</span>{% endif %}<span class="snippet-text">{{ s.html|snippet }}</span></a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if hit.matched %}<p class="hit-matched">gefunden in: {{ hit.matched|join(', ') }}{% if hit.pages|length > 1 %} · {{ plural(hit.pages|length, 'Seite', 'Seiten') }}{% endif %}</p>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% macro page_url(n) %}{{ search_url(q=q, ordner=filters.ordner, ab=filters.ab, bis=filters.bis, tag=filters.tags, absender=filters.absender, seite=n) }}{% endmacro %}
+  {{ m.pagination(page, has_more, page_url) }}
+  {% else %}
+    {% call m.empty_state('Nichts gefunden', 'search') %}
+      <p>Versuch es mit einem kürzeren Wortteil („Neben“ findet auch „Nebenkostenabrechnung“), entferne Filter oder suche nach dem Absender.</p>
+    {% endcall %}
+  {% endif %}
+{% else %}
+  <div class="search-intro">
+    <section class="card search-tips">
+      <div class="card-head"><h2>{{ icon('info') }} So findest du alles</h2></div>
+      <ul class="card-body tip-list">
+        <li><strong>Wortteile reichen:</strong> „Neben“ findet „Nebenkostenabrechnung“, „mueller“ findet „Müller“.</li>
+        <li><strong>Mehrere Wörter</strong> müssen alle vorkommen; <span class="mono">"genaue Phrase"</span> in Anführungszeichen.</li>
+        <li><strong>Filter direkt eintippen:</strong> <span class="mono">ordner:Finanzen</span>, <span class="mono">tag:Garantie</span>, <span class="mono">von:Sparkasse</span>, <span class="mono">jahr:2025</span>, <span class="mono">ab:2025-01-01</span>, <span class="mono">bis:31.12.2025</span>.</li>
+        <li><strong>Kleine Tippfehler</strong> werden erkannt – dann gibt es ein „Meintest du …?“.</li>
+      </ul>
+    </section>
+    {% if recent %}
+    <section class="card">
+      <div class="card-head"><h2>{{ icon('clock') }} Zuletzt hinzugekommen</h2></div>
+      <ul class="recent-list card-body">
+        {% for doc in recent %}
+        <li><a href="{{ document_url(doc.id) }}">{{ icon('file-text' if doc.is_pdf else 'file') }}<span>{{ doc.title }}</span></a> <span class="muted">{{ doc.folder or 'Archiv' }}{% if doc.doc_date %} · {{ doc.doc_date|date_de }}{% endif %}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

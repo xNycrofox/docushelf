@@ -1,0 +1,77 @@
+{# Shared building blocks. Import with: {% import "_macros.html" as m with context %} #}
+{% import "_illustrations.html" as ill %}
+
+{% macro csrf() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+{%- if household %}<input type="hidden" name="household" value="{{ household.id }}">{% endif %}
+{%- endmacro %}
+
+{% macro time_tag(value, mode='relative') -%}
+{% if value %}<time datetime="{{ value|iso }}" title="{{ value|datetime_de }}">{% if mode == 'date' %}{{ value|date_de }}{% elif mode == 'datetime' %}{{ value|datetime_de }}{% else %}{{ value|reltime }}{% endif %}</time>{% endif %}
+{%- endmacro %}
+
+{% macro source_badge(source) -%}
+<span class="badge badge-source">{{ icon(source|source_icon) }}{{ source|source_label }}</span>
+{%- endmacro %}
+
+{% macro folder_path(folder, link=true) -%}
+{% if folder %}
+<span class="folder-path">{{ icon('folder') }}{% for crumb in breadcrumbs(folder)[1:] %}{% if not loop.first %}<span class="sep" aria-hidden="true">/</span>{% endif %}{% if link %}<a href="{{ crumb.url }}">{{ crumb.name }}</a>{% else %}<span>{{ crumb.name }}</span>{% endif %}{% endfor %}</span>
+{% else %}
+<span class="folder-path">{{ icon('archive') }}<span>Archiv</span></span>
+{% endif %}
+{%- endmacro %}
+
+{% macro breadcrumb(folder, link_last=false) -%}
+<nav class="breadcrumb" aria-label="Ordnerpfad">
+  <ol>
+  {% for crumb in breadcrumbs(folder) %}
+    <li>{% if loop.last and not link_last %}<span aria-current="page">{{ crumb.name }}</span>{% else %}<a href="{{ crumb.url }}">{{ crumb.name }}</a>{% if not loop.last %}{{ icon('chevron-right', 'crumb-sep') }}{% endif %}{% endif %}</li>
+  {% endfor %}
+  </ol>
+</nav>
+{%- endmacro %}
+
+{% macro empty_state(title, illustration='inbox') -%}
+<div class="empty-state">
+  {{ ill.draw(illustration) }}
+  <h2 class="empty-title">{{ title }}</h2>
+  <div class="empty-text">{{ caller() }}</div>
+</div>
+{%- endmacro %}
+
+{% macro folder_field(id, value='', name='folder', label='Ordner', required=true, hint='') -%}
+<div class="field">
+  <label for="{{ id }}">{{ label }}</label>
+  <div class="combobox" data-combobox data-source="folders-data">
+    {{ icon('folder', 'field-icon') }}
+    <input id="{{ id }}" class="input input-with-icon" type="text" name="{{ name }}" value="{{ value }}" list="{{ id }}-list" autocomplete="off" spellcheck="false"{% if required %} required{% endif %} aria-describedby="{{ id }}-hint" placeholder="z. B. Finanzen/Bank">
+    <datalist id="{{ id }}-list">
+      {% for folder in folders %}<option value="{{ folder }}"></option>{% endfor %}
+    </datalist>
+  </div>
+  <p class="hint" id="{{ id }}-hint" data-folder-hint>{{ hint or 'Ordner suchen oder einen neuen Pfad eingeben – fehlende Ordner werden angelegt.' }}</p>
+</div>
+{%- endmacro %}
+
+{% macro tag_field(id, value='', name='tags', label='Tags') -%}
+<div class="field">
+  <label for="{{ id }}">{{ label }} <span class="optional">optional</span></label>
+  <input id="{{ id }}" class="input" type="text" name="{{ name }}" value="{{ value }}" data-tag-input data-source="tags-data" autocomplete="off" placeholder="z. B. Garantie, steuerrelevant 2026">
+  <p class="hint">Mehrere Tags durch Komma trennen.</p>
+</div>
+{%- endmacro %}
+
+{% macro pagination(page, has_more, url_for_page) -%}
+{% if page > 1 or has_more %}
+<nav class="pagination" aria-label="Seiten">
+  {% if page > 1 %}<a class="btn btn-ghost" href="{{ url_for_page(page - 1) }}" rel="prev">{{ icon('chevron-left') }} Zurück</a>{% else %}<span></span>{% endif %}
+  <span class="pagination-info">Seite {{ page }}</span>
+  {% if has_more %}<a class="btn btn-ghost" href="{{ url_for_page(page + 1) }}" rel="next">Weiter {{ icon('chevron-right') }}</a>{% else %}<span></span>{% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}
+
+{% macro thumb(src, alt='', width=160, cls='') -%}
+<img class="thumb {{ cls }}" src="{{ src }}?w={{ width }}" srcset="{{ src }}?w={{ width }} 1x, {{ src }}?w={{ width * 2 }} 2x" alt="{{ alt }}" loading="lazy" decoding="async" width="{{ width }}" height="{{ (width * 1.414)|round|int }}">
+{%- endmacro %}

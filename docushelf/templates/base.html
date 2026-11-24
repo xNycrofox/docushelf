@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f2ea" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1b18" media="(prefers-color-scheme: dark)">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  {% if household %}<meta name="household" content="{{ household.id }}">{% endif %}
+  <meta name="referrer" content="same-origin">
+  <meta name="apple-mobile-web-app-title" content="DocuShelf">
+  <title>{% block title %}DocuShelf{% endblock %} · DocuShelf</title>
+  <link rel="icon" href="{{ static_url('favicon.svg') }}" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="{{ static_url('app.css') }}">
+  <script type="module" src="{{ static_url('app.js') }}"></script>
+  {% block head %}{% endblock %}
+</head>
+<body class="{% if user %}is-app{% else %}is-public{% endif %} {% block body_class %}{% endblock %}" data-icons="{{ static_url('icons.svg') }}">
+  <a class="skip-link" href="#main">Zum Inhalt springen</a>
+{% if user %}
+  <div class="app">
+    <aside class="sidebar" aria-label="Hauptnavigation">
+      <a class="brand" href="/eingang">
+        {{ icon('logo', 'brand-mark') }}
+        <span class="brand-name">DocuShelf</span>
+      </a>
+      <nav class="nav">
+        <ul>
+        {% for item in nav %}
+          <li>
+            <a class="nav-item{% if item.active %} is-active{% endif %}" href="{{ item.url }}"{% if item.active %} aria-current="page"{% endif %}>
+              {{ icon(item.icon) }}
+              <span class="nav-label">{{ item.label }}</span>
+              <span class="nav-short" aria-hidden="true">{{ item.short }}</span>
+              {% if item.badge %}<span class="nav-badge" aria-label="{{ item.badge }} bereit">{{ item.badge }}</span>{% endif %}
+              {% if item.alert %}<span class="nav-alert" title="{{ plural(item.alert, 'Fehler', 'Fehler') }}"><span class="visually-hidden">{{ plural(item.alert, 'Fehler', 'Fehler') }}</span></span>{% endif %}
+              {% if item.review %}{% set review_text = plural(item.review, 'automatisch abgelegtes Dokument', 'automatisch abgelegte Dokumente') ~ ' zum Prüfen' %}<span class="nav-review" title="{{ review_text }}" data-auto-review><span class="visually-hidden">{{ review_text }}</span></span>{% endif %}
+            </a>
+          </li>
+        {% endfor %}
+        </ul>
+      </nav>
+      <p class="sidebar-foot">DocuShelf {{ app_version }}</p>
+    </aside>
+
+    <div class="main-col">
+      <header class="topbar">
+        <a class="topbar-brand" href="/eingang" aria-label="DocuShelf – zum Eingang">{{ icon('logo', 'brand-mark') }}</a>
+        <form class="top-search" action="/suche" method="get" role="search">
+          <label class="visually-hidden" for="top-search-input">Archiv durchsuchen</label>
+          {{ icon('search', 'top-search-icon') }}
+          <input id="top-search-input" class="input" type="search" name="q" placeholder="Archiv durchsuchen …" autocomplete="off" data-suggest>
+          <kbd class="top-search-key" aria-hidden="true">/</kbd>
+        </form>
+        {% if households and household %}
+        <details class="user-menu household-menu">
+          <summary aria-label="Haushalt wechseln (aktuell: {{ household.name }})">
+            {{ icon('building', 'household-icon') }}
+            <span class="household-name">{{ household.name }}</span>
+            {{ icon('chevron-down', 'user-caret') }}
+          </summary>
+          <div class="menu">
+            <p class="menu-who"><strong>Haushalt</strong><span class="muted">Du hast Zugriff auf {{ households|length }} Haushalte.</span></p>
+            {% for h in households %}
+            <form method="post" action="/haushalt">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="id" value="{{ h.id }}">
+              <button class="menu-item{% if h.id == household.id %} is-current{% endif %}" type="submit"{% if h.id == household.id %} aria-current="true"{% endif %}>
+                {{ icon('check' if h.id == household.id else 'building') }} {{ h.name }}
+              </button>
+            </form>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+        <details class="user-menu">
+          <summary aria-label="Benutzermenü">
+            <span class="avatar" aria-hidden="true">{{ ((user.name or user.username or '?')|trim)[:1]|upper }}</span>
+            <span class="user-name">{{ user.name or user.username }}</span>
+            {{ icon('chevron-down', 'user-caret') }}
+          </summary>
+          <div class="menu">
+            <p class="menu-who">
+              <strong>{{ user.name or user.username }}</strong>
+              {% if user.email %}<span>{{ user.email }}</span>{% endif %}
+              <span class="muted">{% if user.method == 'oidc' %}angemeldet per SSO{% elif user.method == 'token' %}API-Token{% else %}lokaler Zugang{% endif %}</span>
+            </p>
+            <a class="menu-item" href="/einstellungen">{{ icon('sliders') }} Einstellungen</a>
+            <form method="post" action="/logout">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="menu-item" type="submit">{{ icon('logout') }} Abmelden</button>
+            </form>
+          </div>
+        </details>
+      </header>
+
+      <main id="main" class="content" tabindex="-1">
+        {% include "_flashes.html" %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+{% else %}
+  <main id="main" class="public" tabindex="-1">
+    {% include "_flashes.html" %}
+    {% block public %}{% endblock %}
+  </main>
+{% endif %}
+
+  <dialog class="confirm-dialog" id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 id="confirm-title" class="confirm-title">Bist du sicher?</h2>
+      <p class="confirm-message"></p>
+      <div class="confirm-actions">
+        <button class="btn btn-ghost" value="cancel" type="submit">Abbrechen</button>
+        <button class="btn btn-primary confirm-ok" value="ok" type="submit">Ja</button>
+      </div>
+    </form>
+  </dialog>
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>

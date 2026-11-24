@@ -1,0 +1,12 @@
+{# Tabs of the inbox: what waits for the user and what automatic filing did. Shown once automatic filing is in use. #}
+{% if auto and auto.show_tabs %}
+<nav class="tabs" aria-label="Eingang">
+  <a class="tab{% if active_tab == 'eingang' %} is-active{% endif %}" href="/eingang"{% if active_tab == 'eingang' %} aria-current="page"{% endif %}>
+    {{ icon('inbox') }}<span>Zu bestätigen</span>{% if counts and counts.bereit %} <span class="count">{{ counts.bereit }}</span>{% endif %}
+  </a>
+  <a class="tab{% if active_tab == 'automatisch' %} is-active{% endif %}" href="/eingang/automatisch"{% if active_tab == 'automatisch' %} aria-current="page"{% endif %}>
+    {{ icon('wand') }}<span>Automatisch abgelegt</span>
+    {% if auto.pending %}{% set pending_text = plural(auto.pending, 'unsicheres Dokument', 'unsichere Dokumente') ~ ' zum Prüfen' %}<span class="tab-dot" title="{{ pending_text }}"><span class="visually-hidden">{{ pending_text }}</span></span>{% endif %}
+  </a>
+</nav>
+{% endif %}

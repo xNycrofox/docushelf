@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Eingang{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Eingang</h1>
+    <p class="page-sub">
+      {% if counts.bereit %}{{ plural(counts.bereit, 'Dokument wartet', 'Dokumente warten') }} auf deine Bestätigung.
+      {% elif auto and auto.enabled %}Neue Dokumente landen hier, wenn die automatische Ablage nicht sicher genug ist.
+      {% else %}Neue Dokumente landen zuerst hier – abgelegt wird erst, wenn du zustimmst.{% endif %}
+    </p>
+  </div>
+</div>
+
+{% include "_inbox_tabs.html" %}
+{% include "_auto_bar.html" %}
+
+{% if counts.fehler %}
+<a class="alert alert-error alert-link" href="/eingang/fehler">
+  {{ icon('alert-circle') }}
+  <p><strong>{{ plural(counts.fehler, 'Dokument', 'Dokumente') }}</strong> {{ 'konnte' if counts.fehler == 1 else 'konnten' }} nicht verarbeitet werden.</p>
+  <span class="alert-cta">Ansehen {{ icon('chevron-right') }}</span>
+</a>
+{% endif %}
+
+<section class="upload" aria-labelledby="upload-title">
+  <form class="dropzone" id="upload-form" action="/eingang/hochladen" method="post" enctype="multipart/form-data"
+        data-upload data-api="/api/v1/upload" data-max-mb="{{ max_upload_mb }}" data-accept="{{ upload_accept }}">
+    {{ m.csrf() }}
+    <div class="dropzone-inner">
+      <span class="dropzone-icon" aria-hidden="true">{{ icon('upload') }}</span>
+      <div class="dropzone-copy">
+        <h2 id="upload-title" class="dropzone-title"><span class="only-fine">Dokumente hierher ziehen</span><span class="only-coarse">Dokumente hochladen</span></h2>
+        <p class="dropzone-text">
+          <span class="only-fine">oder </span><label class="link-label" for="upload-files">Dateien auswählen</label>
+          <span class="dropzone-formats">PDF, Fotos und Scans · zusammen bis {{ max_upload_mb }} MB</span>
+        </p>
+      </div>
+      <div class="dropzone-pickers">
+        <input id="upload-files" class="file-input" type="file" name="files" multiple accept="{{ upload_accept }}">
+        <label class="btn btn-ghost btn-small camera-button" for="upload-camera">{{ icon('camera') }} Foto aufnehmen</label>
+        <input id="upload-camera" class="file-input file-input-camera" type="file" name="files" accept="image/*" capture="environment">
+      </div>
+    </div>
+    <ul class="upload-list" data-upload-list hidden></ul>
+    <div class="upload-actions" data-upload-actions>
+      <label class="checkbox" data-combine-option>
+        <input type="checkbox" name="combine" value="1">
+        <span>Bilder zu einem Dokument zusammenfügen</span>
+      </label>
+      <button class="btn btn-primary" type="submit" data-upload-submit>{{ icon('upload') }} Hochladen</button>
+    </div>
+    <div class="upload-progress" data-upload-progress hidden>
+      <progress class="progress" max="100" value="0"></progress>
+      <span class="upload-progress-text" aria-live="polite"></span>
+    </div>
+  </form>
+</section>
+
+<div class="alert alert-info alert-refresh" data-new-ready hidden>
+  {{ icon('sparkle') }}
+  <p>Neue Dokumente sind fertig verarbeitet.</p>
+  <button class="btn btn-small" type="button" data-reload>Anzeigen</button>
+</div>
+
+<section class="section processing" aria-labelledby="processing-title" data-processing
+         data-poll="/api/v1/inbox?state=arbeit" data-ids="{{ processing|map(attribute='id')|join(',') }}"{% if not processing %} hidden{% endif %}>
+  <div class="section-head">
+    <h2 id="processing-title"><span class="pulse-dot" aria-hidden="true"></span> In Arbeit <span class="count" data-processing-count>{{ processing|length }}</span></h2>
+    <p class="section-note">Scans werden in PDF umgewandelt, leere Seiten entfernt, Text erkannt und Vorschläge berechnet.</p>
+  </div>
+  <ul class="processing-list" data-processing-list aria-live="polite">
+  {% for card in processing %}
+    <li class="processing-item" data-id="{{ card.id }}">
+      <span class="processing-icon" aria-hidden="true">{{ icon(card.source_icon) }}</span>
+      <div class="processing-body">
+        <a class="processing-title" href="{{ card.url }}">{{ card.title }}</a>
+        <span class="processing-meta">{{ card.source_label }} · {{ m.time_tag(card.received_at) }}</span>
+      </div>
+      <div class="processing-status">
+        <span class="processing-step" data-step-label>{% if card.id in running %}{{ card.step.label }} …{% else %}Wartet auf Verarbeitung …{% endif %}</span>
+        <progress class="progress" max="{{ card.step.total }}" value="{{ card.step.done }}" data-step-progress aria-label="Fortschritt: Schritt {{ card.step.number }} von {{ card.step.total }}"></progress>
+      </div>
+    </li>
+  {% endfor %}
+  </ul>
+</section>
+
+<section class="section" aria-labelledby="ready-title">
+{% if cards %}
+  <form id="batch-form" class="batch" method="post" action="/eingang/sammelablage" data-batch data-api="/api/v1/inbox/file-batch">
+    {{ m.csrf() }}
+    <div class="section-head">
+      <h2 id="ready-title">Bereit zur Ablage <span class="count">{{ counts.bereit }}</span></h2>
+      <div class="section-actions">
+        <button class="btn btn-ghost btn-small" type="submit" form="refresh-all-form" title="Vorschläge aller Dokumente mit den aktuellen Regeln und Ordnern neu berechnen">{{ icon('refresh') }} Vorschläge neu berechnen</button>
+        <label class="checkbox select-all" title="Mögliche Duplikate werden ausgelassen"><input type="checkbox" data-select-all> <span>Alle auswählen</span></label>
+      </div>
+    </div>
+    <ul class="card-grid inbox-grid">
+    {% for card in cards %}
+      <li class="inbox-card{% if card.duplicate %} has-warning{% endif %}" data-card="{{ card.id }}">
+        <label class="inbox-select" title="Für die Sammelablage auswählen">
+          {# The fingerprint of the suggestion shown here travels along: if it changed in the meantime, the document is not filed. #}
+          <input type="checkbox" name="items" value="{{ card.id }}:{{ card.fingerprint }}{% if card.duplicate %}:dup{% endif %}" data-select data-id="{{ card.id }}" data-expect="{{ card.fingerprint }}"{% if card.duplicate %} data-duplicate{% endif %}{% if not card.fileable %} disabled{% endif %}>
+          <span class="visually-hidden">„{{ card.title }}“ auswählen</span>
+        </label>
+        <a class="inbox-thumb" href="{{ card.url }}" tabindex="-1" aria-hidden="true">
+          <img src="{{ static_url('page-unavailable.svg') if card.preview_unavailable else '/api/v1/inbox/' ~ card.id ~ '/pages/1.png?w=320' }}" alt="" loading="lazy" decoding="async" width="320" height="452">
+          {% if card.page_count > 1 %}<span class="page-count">{{ card.page_count }} S.</span>{% endif %}
+        </a>
+        <div class="inbox-body">
+          <h3 class="inbox-title"><a href="{{ card.url }}">{{ card.title }}</a></h3>
+          <p class="inbox-folder{% if not card.folder %} is-missing{% endif %}">
+            {{ icon('folder') }}<span class="meta-text" title="{{ card.folder }}">{{ card.folder or 'Kein Ordnervorschlag' }}</span>
+            {% if card.new_folder %}<span class="badge badge-new" title="Dieser Ordner wird neu angelegt">neu</span>{% endif %}
+          </p>
+          <p class="inbox-meta">
+            {% if card.doc_date %}<span class="meta-item">{{ icon('calendar') }}<span class="meta-text">{{ card.doc_date|date_de }}</span></span>{% endif %}
+            {% if card.sender %}<span class="meta-item" title="{{ card.sender }}">{{ icon('building') }}<span class="meta-text">{{ card.sender }}</span></span>{% endif %}
+          </p>
+          <p class="inbox-badges">
+            {{ m.source_badge(card.source) }}
+            {% if card.duplicate %}<span class="badge badge-warn">{{ icon('layers') }}Mögliches Duplikat</span>{% endif %}
+            {% if card.protection %}<span class="badge badge-muted" title="{{ card.protection_notice }}" data-protection>{{ icon('lock') }}{{ card.protection_label }}</span>{% endif %}
+            {% if card.pages_removed %}<span class="badge badge-muted" title="{{ plural(card.pages_removed, 'leere Seite', 'leere Seiten') }} entfernt">{{ icon('file') }}−{{ card.pages_removed }}</span>{% endif %}
+            {% if card.auto_hold %}<span class="badge badge-hold" title="{{ card.auto_hold.reasons|join(' · ') or card.auto_hold.reason }}" data-auto-hold>{{ icon('wand') }}{{ card.auto_hold.label }}</span>{% endif %}
+          </p>
+        </div>
+      </li>
+    {% endfor %}
+    </ul>
+    <div class="bulk-bar" data-bulk-bar>
+      <p class="bulk-info" aria-live="polite"><strong data-selected-count>0</strong> ausgewählt</p>
+      <p class="bulk-hint">Jedes Dokument wird mit dem hier angezeigten Vorschlag abgelegt – hat er sich inzwischen geändert, bleibt es im Eingang.</p>
+      <button class="btn btn-primary" type="submit" data-batch-submit>{{ icon('check') }} Vorschläge übernehmen</button>
+    </div>
+  </form>
+  <form id="refresh-all-form" method="post" action="/eingang/vorschlaege" hidden>{{ m.csrf() }}</form>
+  {% macro page_url(n) %}/eingang?seite={{ n }}{% endmacro %}
+  {{ m.pagination(page, has_more, page_url) }}
+{% elif not processing %}
+  {% call m.empty_state('Alles erledigt!', 'inbox') %}
+    {% if auto and auto.enabled %}
+    <p>Der Eingang ist leer. Was die automatische Ablage sicher zuordnen kann, landet direkt im Archiv – alles andere erscheint hier.</p>
+    <p class="muted"><a href="/eingang/automatisch">Automatisch abgelegte Dokumente ansehen</a></p>
+    {% else %}
+    <p>Der Eingang ist leer. Neue Scans, Mails und Uploads erscheinen automatisch hier.</p>
+    <p class="muted">Tipp: Rechnungen per Mail weiterleiten oder direkt vom Handy fotografieren.</p>
+    {% endif %}
+  {% endcall %}
+{% endif %}
+</section>
+{% endblock %}
