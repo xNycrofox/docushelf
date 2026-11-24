@@ -588,3 +588,35 @@ def test_household_pages_for_members_without_admin_rights(multi):
     response = save(client, "ablage", "automatisch", {"auto_file": "always"})
     assert response.status_code == 403
     assert "auto_file" not in multi.path.read_text(encoding="utf-8")
+
+
+def test_anthropic_uses_its_fixed_address_and_is_shown_as_cloud(site, env):
+    from docushelf.config import ANTHROPIC_URL
+    from docushelf.web import views
+
+    client = admin(site)
+    # An address left over from Ollama stays in the file until the section is saved …
+    site.store.save({"llm_enabled": True, "llm_provider": "ollama", "llm_url": "http://ollama:11434"})
+    assert file_values(site)["llm_url"] == "http://ollama:11434"
+    # … and is dropped once Anthropic is chosen: the Anthropic API has a fixed address.
+    response = save(client, "ki", "sprachmodell", {"llm_enabled": "1", "llm_provider": "anthropic",
+                                                   "llm_url": "http://ollama:11434", "llm_model": ""})
+    assert response.status_code == 303
+    values = file_values(site)
+    assert values["llm_provider"] == "anthropic" and "llm_url" not in values
+
+    # The loader ignores a stored address for Anthropic, so the page never shows a local one.
+    settings = load_settings({**env, "DOCUSHELF_LLM_ENABLED": "true", "DOCUSHELF_LLM_PROVIDER": "anthropic",
+                              "DOCUSHELF_LLM_URL": "http://ollama:11434"})
+    assert settings.llm.url == ANTHROPIC_URL
+    info = views.llm_info(settings)
+    assert info.provider_label == "Anthropic" and info.cloud and info.local is False
+    assert info.endpoint == "https://api.anthropic.com" and info.context_tokens is None
+
+
+def test_the_language_model_page_shows_a_cloud_provider_as_cloud(site, env):
+    site.services.settings = load_settings({**env, "DOCUSHELF_LLM_ENABLED": "true", "DOCUSHELF_LLM_PROVIDER": "anthropic",
+                                            "DOCUSHELF_LLM_API_KEY": "sk-x", "DOCUSHELF_LLM_URL": "http://ollama:11434"})
+    status = card(admin(site).get("/einstellungen/ki").text, "status")
+    assert "Anthropic" in status and "Cloud" in status and "api.anthropic.com" in status
+    assert "ollama:11434" not in status and "im lokalen Netz" not in status

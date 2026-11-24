@@ -541,10 +541,11 @@ Ordner in die vorhandene Struktur einfügen, das Datum muss im Dokument stehen, 
 bereinigt („Dokumentart Absender Zeitraum“, ohne Datum – das steht vorn im Dateinamen).
 
 > **Wohin der Text geht:** Der Inhalt jedes Dokuments wird an die Adresse in `DOCUSHELF_LLM_URL`
-> geschickt – und nur dorthin. Mit dem Standard, einem Ollama auf deinem eigenen Server, verlässt
-> nichts das Haus. Trägst du einen Dienst im Internet ein, liest dieser Dienst jedes Dokument mit;
-> das widerspricht dem Grundsatz „Daten bleiben lokal“. Wenn Dokumente das Haus nicht verlassen
-> dürfen: nur einen lokalen Server verwenden.
+> geschickt – und nur dorthin; mit `DOCUSHELF_LLM_PROVIDER=anthropic` immer an die Anthropic-API
+> (`api.anthropic.com`), eine eingetragene Adresse gilt dann nicht. Mit dem Standard, einem Ollama
+> auf deinem eigenen Server, verlässt nichts das Haus. Trägst du einen Dienst im Internet ein oder
+> wählst Anthropic, liest dieser Dienst jedes Dokument mit; das widerspricht dem Grundsatz „Daten
+> bleiben lokal“. Wenn Dokumente das Haus nicht verlassen dürfen: nur einen lokalen Server verwenden.
 
 **Ollama im selben Stack:** eine Datei `compose.override.yaml` neben `compose.yaml` anlegen
 (Compose liest sie automatisch mit):
@@ -592,6 +593,20 @@ DOCUSHELF_LLM_MODEL=qwen2.5-7b-instruct         # Modellname, wie ihn der Server
 DocuShelf fragt nach strukturierter Ausgabe (JSON-Schema); Server, die das nicht können, bekommen
 automatisch den einfachen JSON-Modus. Der API-Schlüssel geht als Bearer-Token an den Server und
 wird nie angezeigt oder protokolliert.
+
+**Anthropic (Cloud):** Claude-Modelle über die Anthropic-API. Eine Adresse braucht es nicht, nur
+einen API-Schlüssel; jedes Dokument geht dann an Anthropic (unter *Einstellungen → KI* mit
+„Cloud“ gekennzeichnet):
+
+```sh
+DOCUSHELF_LLM_ENABLED=true
+DOCUSHELF_LLM_PROVIDER=anthropic
+DOCUSHELF_LLM_MODEL=claude-opus-5-5             # Standard; kleinere Modelle sind günstiger
+DOCUSHELF_LLM_API_KEY_FILE=/run/secrets/llm_api_key
+```
+
+Alles davon lässt sich auch unter *Einstellungen → KI* eintragen; der Schlüssel landet dann in
+`config/secrets/` und wird nie angezeigt.
 
 **Prüfen:** *Einstellungen → KI → Verbindung testen* lässt das Modell einen
 eingebauten, erfundenen Beispielbrief einordnen und zeigt Antwort und Dauer. Im Protokoll jedes
@@ -877,8 +892,10 @@ Protokoll je Dokument liegt in `eingang/fehler/<ID>/log.txt`. Nach einer Korrekt
   SMTP-Empfänger nimmt nur eine Adresse an und leitet nie weiter.
 - Der App-Container läuft ohne Root und ohne Linux-Capabilities (`cap_drop: ALL`,
   `no-new-privileges`).
-- Keine Cloud-Dienste für Dokumentinhalte: Ein Sprachmodell ist optional und bekommt Dokumenttexte
-  nur unter der eingestellten Adresse – standardmäßig ein Ollama auf dem eigenen Server (Abschnitt 7).
+- Keine Cloud-Dienste für Dokumentinhalte, solange du keinen einstellst: Ein Sprachmodell ist
+  optional und bekommt Dokumenttexte nur von dem eingestellten Dienst – standardmäßig ein Ollama auf
+  dem eigenen Server. Mit `DOCUSHELF_LLM_PROVIDER=anthropic` oder einer Internet-Adresse gehen sie
+  an diesen Dienst (Abschnitt 7).
 - Jede Ablage, Verschiebung und Löschung steht im Audit-Log (`protokoll/`), jede automatische
   Ablage zusätzlich mit Sicherheit und Gründen.
 

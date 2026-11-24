@@ -520,7 +520,9 @@ def _load_llm(src: _Source) -> LlmConfig | None:
         return None
     provider = parse_llm_provider(src.str("llm_provider"))
     url = (src.str("llm_url") or "").strip().rstrip("/")
-    if not url and provider == "anthropic":
+    if provider == "anthropic":
+        # The Anthropic client always talks to the Anthropic API; a stored address
+        # (e.g. one left over from Ollama) would only be shown and never used.
         url = ANTHROPIC_URL
     if not url:
         if provider != "ollama":

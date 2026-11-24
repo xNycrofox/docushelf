@@ -21,10 +21,15 @@ if (provider && url) {
     openai: ["http://llama:8080/v1", "Modellname"],
     anthropic: ["https://api.anthropic.com", "Modellname"],
   };
+  // Anthropic has a fixed address: the field would only mislead, so it is hidden (and not sent).
+  const row = url.closest(".form-row");
   const update = () => {
     const [address, name] = hints[provider.value] || hints.ollama;
     url.placeholder = address;
     if (model) model.placeholder = name;
+    const fixed = provider.value === "anthropic";
+    if (row) row.hidden = fixed;
+    url.disabled = fixed || (row !== null && row.classList.contains("is-locked"));
   };
   provider.addEventListener("change", update);
   update();

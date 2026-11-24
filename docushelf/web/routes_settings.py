@@ -613,6 +613,10 @@ def _save_section(request: Request, form: Any, user: Any, page_key: str, section
                 f.check(value)
             parsed[f.key] = value
             changes[f.key] = sf.stored_value(f, value)
+        if changes.get("llm_provider") == "anthropic" and "llm_url" in changes:
+            # The Anthropic API has a fixed address: a stored one (e.g. left over from Ollama) is dropped.
+            changes["llm_url"] = None
+            parsed["llm_url"] = None
         if household_scope:
             changed = _save_household(request, sec, parsed)
             new = None

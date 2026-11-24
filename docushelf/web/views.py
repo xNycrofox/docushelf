@@ -550,7 +550,7 @@ def source_icon(source: str | None) -> str:
 SUGGESTION_SOURCES = {
     "rule": ("Regel", "signpost"),
     "similarity": ("Ähnliche Dokumente", "layers"),
-    "llm": ("KI (lokal)", "sparkle"),
+    "llm": ("KI", "sparkle"),
     "import": ("Paperless", "archive"),
     "heuristic": ("Vermutung", "sparkle"),
 }
@@ -1769,7 +1769,9 @@ def auto_done(item: Any) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 # Language model (settings page)
 
-LLM_PROVIDERS = {"ollama": "Ollama", "openai": "OpenAI-kompatibel"}
+LLM_PROVIDERS = {"ollama": "Ollama", "openai": "OpenAI-kompatibel", "anthropic": "Anthropic"}
+#: Providers that are services on the internet by design (the endpoint is never local).
+CLOUD_PROVIDERS = frozenset({"anthropic"})
 _LOCAL_SUFFIXES = (".localhost", ".local", ".lan", ".internal", ".home.arpa", ".intranet")
 _SHARED_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 _ANSWER_FIELDS = (
@@ -1837,6 +1839,7 @@ class LlmInfo:
     api_key: bool = False
     context_tokens: int | None = None
     timeout: int | None = None
+    cloud: bool = False
 
 
 def llm_info(settings: Any) -> LlmInfo:
@@ -1853,7 +1856,8 @@ def llm_info(settings: Any) -> LlmInfo:
         provider=provider,
         provider_label=LLM_PROVIDERS.get(provider, provider),
         endpoint=endpoint_host(url),
-        local=endpoint_is_local(url),
+        local=False if provider in CLOUD_PROVIDERS else endpoint_is_local(url),
+        cloud=provider in CLOUD_PROVIDERS,
         model=str(getattr(config, "model", "") or ""),
         api_key=bool(getattr(config, "api_key", None)),
         context_tokens=int(context_tokens) if isinstance(context_tokens, int) and provider == "ollama" else None,

@@ -8,7 +8,7 @@
   {% if llm.enabled %}
   <dl class="kv">
     <div><dt>Anbieter</dt><dd>{{ llm.provider_label }}</dd></div>
-    <div><dt>Endpunkt</dt><dd><span class="mono break">{{ llm.endpoint or '–' }}</span>{% if llm.local %} <span class="badge badge-muted">im lokalen Netz</span>{% elif llm.local is not none %} <span class="badge badge-warn" data-llm-remote>nicht lokal</span>{% endif %}</dd></div>
+    <div><dt>Endpunkt</dt><dd><span class="mono break">{{ llm.endpoint or '–' }}</span>{% if llm.cloud %} <span class="badge badge-warn" data-llm-remote>Cloud</span>{% elif llm.local %} <span class="badge badge-muted">im lokalen Netz</span>{% elif llm.local is not none %} <span class="badge badge-warn" data-llm-remote>nicht lokal</span>{% endif %}</dd></div>
     <div><dt>Modell</dt><dd class="mono">{{ llm.model }}</dd></div>
     {% if llm.api_key %}<div><dt>API-Schlüssel</dt><dd>hinterlegt</dd></div>{% endif %}
     {% if llm.context_tokens %}<div><dt>Kontext</dt><dd>{{ llm.context_tokens|number }} Tokens</dd></div>{% endif %}
@@ -41,7 +41,8 @@
     {% if probe_target %}<span class="hint">Getestet wird die gespeicherte Einstellung ({{ probe_target.provider_label }} · <span class="mono">{{ probe_target.model }}</span>), auch vor dem Neustart.</span>{% endif %}
   </form>
   {% endif %}
-  {% if llm.enabled %}<p class="hint">{% if llm.local is sameas false %}<strong>Achtung:</strong> {% endif %}Für Vorschläge und die automatische Ablage geht der Text der Dokumente an diesen Endpunkt. Sollen Dokumente das Haus nicht verlassen, nimm einen Dienst im eigenen Netz (z. B. Ollama).</p>{% endif %}
+  {% if llm.enabled and llm.cloud %}<p class="hint">Für Vorschläge und die automatische Ablage geht der Text der Dokumente an {{ llm.provider_label }}. Sollen Dokumente das Haus nicht verlassen, nimm einen Dienst im eigenen Netz (z. B. Ollama).</p>
+  {% elif llm.enabled %}<p class="hint">{% if llm.local is sameas false %}<strong>Achtung:</strong> {% endif %}Für Vorschläge und die automatische Ablage geht der Text der Dokumente an diesen Endpunkt. Sollen Dokumente das Haus nicht verlassen, nimm einen Dienst im eigenen Netz (z. B. Ollama).</p>{% endif %}
   {% endcall %}
 
   {% for v in sections %}{{ s.section_card(v) }}{% endfor %}

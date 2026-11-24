@@ -290,7 +290,7 @@ LLM_SECTION = Section(
         ),
         Field(
             "llm_url", "Adresse", "url", placeholder="http://ollama:11434", mono=True, attr=_llm("url"),
-            help="Leer lassen für Ollama unter http://ollama:11434 bzw. die Anthropic-API. OpenAI-kompatible Server oft mit /v1.",
+            help="Leer lassen für Ollama unter http://ollama:11434. OpenAI-kompatible Server oft mit /v1. Bei Anthropic ohne Bedeutung: die Adresse der Anthropic-API ist fest.",
         ),
         Field("llm_model", "Modell", "text", placeholder="qwen2.5:7b", mono=True, attr=_llm("model"), max_length=200),
         Field(
