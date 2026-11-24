@@ -1,0 +1,31 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please remove personal data (names, addresses, document contents) from logs and screenshots. Security problems belong in a private security advisory, not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, expected and actual behaviour.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `docushelf --version` or the image tag.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: How do you run DocuShelf (Docker, compose, reverse proxy, OIDC provider, households)?
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      render: text
