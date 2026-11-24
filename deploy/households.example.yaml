@@ -1,0 +1,77 @@
+# DocuShelf – mehrere Haushalte (Beispiel)
+#
+# Kopieren nach <daten>/config/households.yaml (neben settings.yaml und
+# secret.key), z. B.:
+#   cp households.example.yaml ../data/config/households.yaml
+# und DocuShelf neu starten. Ohne diese Datei läuft DocuShelf wie bisher mit
+# genau einem Haushalt. Anleitung: DEPLOY.md, Abschnitt „Mehrere Haushalte“.
+#
+# Jeder Haushalt hat sein eigenes Archiv, seinen eigenen Eingang, eigene Regeln,
+# Tokens und Kanäle. Niemand sieht Dokumente eines anderen Haushalts.
+#
+# Die Datei wird streng geprüft: Ein unbekannter Eintrag (Tippfehler!) verhindert
+# den Start, damit eine falsch geschriebene Gruppe nie stillschweigend den
+# Zugriff ändert. Namen und Adressen unten sind erfundene Beispiele.
+
+households:
+
+  # -- Haushalt 1: die bisherige Installation -------------------------------------
+  # Mit „path: "."“ bleibt alles, was schon im Datenverzeichnis liegt (archiv/,
+  # eingang/, config/ …), genau dort – es wird nichts verschoben. Höchstens ein
+  # Haushalt darf diesen Pfad haben.
+  - id: familie-a                 # a-z, 0-9, Bindestrich; max. 32 Zeichen; später nicht mehr ändern
+    name: "Familie Mustermann"    # Anzeigename (Umschalter, Einstellungen)
+    path: "."
+
+    # Wer hinein darf: Gruppen aus dem Anmeldedienst (Claim „groups“) und/oder
+    # einzelne Konten (Benutzername oder bestätigte E-Mail-Adresse). Wer in beiden
+    # Haushalten Mitglied ist, kann in der Oberfläche umschalten. Das lokale
+    # Notfallkonto darf in alle Haushalte.
+    groups: [familie-a]
+    users: []
+
+    # Alles Weitere ist optional und überschreibt die globale Einstellung nur für
+    # diesen Haushalt.
+    owner_names: ["Erika Mustermann", "Max Mustermann"]   # statt DOCUSHELF_OWNER_NAMES
+    notify_url: https://ntfy.example.org/familie-a          # DOCUSHELF_NOTIFY_URL gilt nur für den Haushalt mit path "."
+    auto_file:                                              # statt DOCUSHELF_AUTO_FILE_*
+      mode: confident                # off | rules | confident | always
+      threshold: 0.75
+
+    # Eigenes Postfach für Rechnungen zum Weiterleiten (IMAP-Abruf). Genau eines
+    # von password / password_file / password_env angeben. Passwörter werden nie
+    # protokolliert; am besten password_file (Docker-Secret) verwenden.
+    imap:
+      host: imap.example.org
+      user: dokumente-a@example.org
+      password_file: /run/secrets/imap-familie-a
+      # password_env: IMAP_PASSWORD_FAMILIE_A     # Name einer Umgebungsvariable
+      # port: 993
+      # ssl: true
+      folder: INBOX
+      allowed_senders: [erika@example.org, max@example.org]   # Adressen oder @domain
+      # poll_seconds: 60
+
+    # Empfängeradressen für Scan-to-Mail (der eingebaute SMTP-Empfänger, Abschnitt
+    # „SMTP-Empfänger“ in DEPLOY.md). Mail an eine dieser Adressen landet in
+    # diesem Haushalt; Groß-/Kleinschreibung ist egal. Jede Adresse darf nur
+    # einem Haushalt gehören.
+    smtp_recipients: [scan-familie-a@docushelf.example.org]
+
+    # Weitere überwachte Ordner (Name: Pfad im Container), nur für diesen
+    # Haushalt. Den Ordner in compose.yaml einbinden. Er darf nicht im Archiv
+    # oder Eingang eines anderen Haushalts liegen.
+    watch_folders:
+      nas: /watch/familie-a
+
+  # -- Haushalt 2: ein weiterer Haushalt ------------------------------------------
+  # Ohne „path“ liegen die Daten unter <daten>/haushalte/<id>/ (archiv/, eingang/,
+  # config/, protokoll/, papierkorb/, index/) und werden beim ersten Start
+  # angelegt.
+  - id: eltern
+    name: "Eltern Mustermann"
+    groups: [docushelf-eltern]
+    users: ["opa@example.org"]
+    smtp_recipients: [scan-eltern@docushelf.example.org]
+    # Kein eigenes „imap“: Dieser Haushalt ruft kein Postfach ab. Die globalen
+    # DOCUSHELF_IMAP_* gelten nur für den Haushalt mit path ".".

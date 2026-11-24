@@ -1,0 +1,14 @@
+# Allowlist: the image only needs the package and its metadata. Everything
+# else - virtual environments, test data, caches, git history, local data
+# directories and .env files with secrets - stays out of the build context.
+*
+!pyproject.toml
+!README.md
+!docushelf/
+
+# Never part of the image, even inside the package directory
+**/__pycache__
+**/*.py[cod]
+**/.DS_Store
+**/.pytest_cache
+**/*.egg-info

@@ -1,0 +1,5 @@
+# Local deployment state: documents, secrets and certificates never belong in git.
+/data/
+/.env
+/samba.env
+/certs/

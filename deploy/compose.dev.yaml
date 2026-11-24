@@ -1,0 +1,205 @@
+# DocuShelf – lokaler Teststack für alle Eingangskanäle, ohne echten Drucker
+#
+#   docker compose -f deploy/compose.dev.yaml up --build
+#   docker compose -f deploy/compose.dev.yaml --profile smb --profile ftp --profile smtp up --build
+#
+# Weboberfläche: http://localhost:8000 (Notfallzugang admin / dev-admin-passwort).
+# Jedes Profil startet den Kanal und einen Testclient, der das Beispieldokument
+# deploy/testdata/beispiel-rechnung.pdf einliefert – wie ein Drucker per
+# Scan-to-Folder (SMB), Scan-to-FTP bzw. Scan-to-Mail (SMTP).
+# Daten landen in dev-data/ im Repository (von git ignoriert).
+# Mehr: deploy/testdata/README.md
+
+name: docushelf-dev
+
+x-samba-hardening: &samba-hardening
+  AVAHI_DISABLE: "1"
+  WSDD2_DISABLE: "1"
+  NETBIOS_DISABLE: "1"
+  SAMBA_CONF_LOG_LEVEL: "1"
+  SAMBA_GLOBAL_CONFIG_server_SPACE_min_SPACE_protocol: SMB2_10
+  SAMBA_GLOBAL_CONFIG_smb_SPACE_ports: "445"
+  SAMBA_GLOBAL_CONFIG_disable_SPACE_netbios: "yes"
+  SAMBA_GLOBAL_CONFIG_load_SPACE_printers: "no"
+  SAMBA_GLOBAL_CONFIG_printing: bsd
+  SAMBA_GLOBAL_CONFIG_printcap_SPACE_name: /dev/null
+  SAMBA_GLOBAL_CONFIG_disable_SPACE_spoolss: "yes"
+  SAMBA_GLOBAL_CONFIG_map_SPACE_to_SPACE_guest: Never
+  SAMBA_GLOBAL_CONFIG_restrict_SPACE_anonymous: "2"
+
+services:
+  init:
+    image: busybox:stable
+    user: "0:0"
+    network_mode: none
+    restart: "no"
+    command: ["sh", "/init-data.sh"]
+    environment:
+      DOCUSHELF_UID: "1000"
+      DOCUSHELF_GID: "1000"
+      SCAN_DIR_MODE: "1733"
+    volumes:
+      - ../dev-data:/data
+      - ./init-data.sh:/init-data.sh:ro
+
+  docushelf:
+    image: docushelf:dev
+    build:
+      context: ..
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    user: "1000:1000"
+    environment:
+      DOCUSHELF_DATA_DIR: /data
+      DOCUSHELF_BASE_URL: http://localhost:8000
+      DOCUSHELF_SECURE_COOKIES: "false"
+      DOCUSHELF_ADMIN_USER: admin
+      DOCUSHELF_ADMIN_PASSWORD: dev-admin-passwort
+      DOCUSHELF_LOG_LEVEL: info
+      DOCUSHELF_TIMEZONE: Europe/Berlin
+      TZ: Europe/Berlin
+      DOCUSHELF_STABLE_SECONDS: "2"
+      DOCUSHELF_REMOTE_STABLE_SECONDS: "3"
+      # SMTP-Empfänger für den Scan-to-Mail-Test; im Docker-Netz erlaubt
+      DOCUSHELF_SMTP_ENABLED: "true"
+      DOCUSHELF_SMTP_RECIPIENT: scan@docushelf.test
+      DOCUSHELF_SMTP_ALLOWED_NETWORKS: 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+    volumes:
+      - ../dev-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:2525:2525"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "docushelf", "healthcheck"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # -- SMB ---------------------------------------------------------------------
+  samba:
+    image: ghcr.io/servercontainers/samba:latest
+    profiles: ["smb"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      <<: *samba-hardening
+      ACCOUNT_scanner: scanner-test-passwort
+      UID_scanner: "1001"
+      ACCOUNT_docushelf: dienstkonto-test-passwort
+      UID_docushelf: "1000"
+      ACCOUNT_dev: dev-test-passwort
+      UID_dev: "1101"
+      SAMBA_VOLUME_CONFIG_scan: >-
+        [scan]; path = /shares/scan; valid users = scanner; read only = no; browseable = no;
+        guest ok = no; force group = docushelf; create mask = 0640; force create mode = 0640;
+        directory mask = 2770; force directory mode = 2770; hide unreadable = yes;
+        follow symlinks = no; wide links = no
+      SAMBA_VOLUME_CONFIG_archiv: >-
+        [archiv]; path = /shares/archiv; valid users = dev; read only = no; browseable = yes;
+        guest ok = no; force user = docushelf; force group = docushelf; create mask = 0644;
+        directory mask = 0755; nt acl support = no; vfs objects = fruit streams_xattr;
+        fruit:metadata = stream; fruit:veto_appledouble = yes; fruit:posix_rename = yes;
+        fruit:wipe_intentionally_left_blank_rfork = yes; fruit:delete_empty_adfiles = yes;
+        veto files = /._*/.DS_Store/Thumbs.db/desktop.ini/; delete veto files = yes;
+        hide dot files = yes; follow symlinks = no; wide links = no
+    volumes:
+      - ../dev-data/eingang/quellen/smb:/shares/scan
+      - ../dev-data/archiv:/shares/archiv
+    ports:
+      # Finder/Explorer: smb://localhost:1445/archiv (Benutzer dev)
+      - "127.0.0.1:1445:445"
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ltn 2>/dev/null | grep -q ':445 ' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  smb-client:
+    image: alpine:3
+    profiles: ["smb"]
+    restart: "no"
+    depends_on:
+      samba:
+        condition: service_healthy
+      docushelf:
+        condition: service_healthy
+    volumes:
+      - ./testdata:/testdata:ro
+    command:
+      - sh
+      - -c
+      - >-
+        apk add --no-cache samba-client >/dev/null &&
+        name="smb-$$(date +%Y%m%d-%H%M%S).pdf" &&
+        smbclient //samba/scan -U 'scanner%scanner-test-passwort' -m SMB3
+        -c "put /testdata/beispiel-rechnung.pdf $$name" &&
+        echo "SMB: $$name in die Freigabe scan gelegt"
+
+  # -- FTP ---------------------------------------------------------------------
+  ftp:
+    image: docushelf-ftp:dev
+    build:
+      context: ./ftp
+    profiles: ["ftp"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      FTP_PASSWORD: scanner-test-passwort
+      FTP_UID: "1000"
+      FTP_GID: "1000"
+      # Ohne FTP_PASV_ADDRESS nennt der Server seine Adresse im Docker-Netz –
+      # genau richtig für den Testclient im selben Netz.
+    volumes:
+      - ../dev-data/eingang/quellen/ftp:/srv/ftp
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ltn 2>/dev/null | grep -q ':21 ' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  ftp-client:
+    image: alpine:3
+    profiles: ["ftp"]
+    restart: "no"
+    depends_on:
+      ftp:
+        condition: service_healthy
+      docushelf:
+        condition: service_healthy
+    volumes:
+      - ./testdata:/testdata:ro
+    command:
+      - sh
+      - -c
+      - >-
+        apk add --no-cache curl >/dev/null &&
+        name="ftp-$$(date +%Y%m%d-%H%M%S).pdf" &&
+        curl --fail --silent --show-error --user 'scanner:scanner-test-passwort'
+        -T /testdata/beispiel-rechnung.pdf "ftp://ftp/$$name" &&
+        echo "FTP: $$name hochgeladen"
+
+  # -- SMTP (Empfänger läuft im App-Container) -----------------------------------
+  smtp-client:
+    image: python:3.12-alpine
+    profiles: ["smtp"]
+    restart: "no"
+    depends_on:
+      docushelf:
+        condition: service_healthy
+    environment:
+      SMTP_HOST: docushelf
+      SMTP_PORT: "2525"
+      SMTP_RECIPIENT: scan@docushelf.test
+      SMTP_SENDER: drucker@docushelf.test
+      SMTP_FILE: /testdata/beispiel-rechnung.pdf
+    volumes:
+      - ./testdata:/testdata:ro
+    command: ["python", "/testdata/send-mail.py"]

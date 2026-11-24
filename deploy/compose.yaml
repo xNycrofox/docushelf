@@ -1,0 +1,242 @@
+# DocuShelf – Compose-Stack für den Betrieb (Beispiel)
+#
+#   cp .env.example .env                  # anpassen
+#   docker compose up -d --build          # App
+#   docker compose --profile smb --profile ftp up -d   # zusätzlich Scan-Kanäle
+#
+# Profile:
+#   smb   Samba mit den Freigaben „scan“ (nur Schreiben, für den Drucker) und
+#         „archiv“ (Lesen/Schreiben für den Haushalt); Konten in samba.env
+#   ftp   FTP-Server für Scan-to-FTP (nur Upload)
+# Der SMTP-Empfänger für Scan-to-Mail läuft im App-Container
+# (DOCUSHELF_SMTP_ENABLED=true).
+#
+# Mehrere Haushalte (config/households.yaml): Jeder Haushalt hat eigene Ordner
+# unter <haushalt>/eingang/quellen/…; für SMB und FTP kommt je Haushalt eine
+# eigene Freigabe bzw. ein eigener Container dazu – Beispiel in DEPLOY.md,
+# Abschnitt 13 (als compose.override.yaml). Dieser Stack bedient den Haushalt
+# im Datenverzeichnis selbst.
+#
+# Die Scan-Kanäle werden nur auf der VPN-Adresse des Servers veröffentlicht,
+# niemals auf einer öffentlichen: SMB und FTP auf DOCUSHELF_PRIVATE_IP, der
+# SMTP-Empfänger auf DOCUSHELF_SMTP_BIND. Ohne Angabe lauschen sie nur auf
+# 127.0.0.1 – so startet die App auf jedem Host, auch bevor das VPN eingerichtet
+# ist. Ausführliche Anleitung: DEPLOY.md
+
+name: docushelf
+
+services:
+  # Bereitet das Datenverzeichnis vor (Besitzer UID 1000, Eingangsordner für
+  # SMB/FTP) und beendet sich dann. Siehe init-data.sh.
+  init:
+    image: busybox:stable
+    user: "0:0"
+    network_mode: none
+    restart: "no"
+    command: ["sh", "/init-data.sh"]
+    environment:
+      DOCUSHELF_UID: ${DOCUSHELF_UID:-1000}
+      DOCUSHELF_GID: ${DOCUSHELF_GID:-1000}
+      SCAN_DIR_MODE: ${SAMBA_SCAN_DIR_MODE:-1733}
+    volumes:
+      - ${DOCUSHELF_DATA_PATH:-./data}:/data
+      - ./init-data.sh:/init-data.sh:ro
+
+  docushelf:
+    image: ${DOCUSHELF_IMAGE:-docushelf:local}
+    build:
+      context: ..
+    restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    user: "${DOCUSHELF_UID:-1000}:${DOCUSHELF_GID:-1000}"
+    env_file: .env
+    environment:
+      # Fest im Container; nach außen über „ports“ bzw. den Reverse Proxy.
+      DOCUSHELF_DATA_DIR: /data
+      DOCUSHELF_HOST: 0.0.0.0
+      DOCUSHELF_PORT: "8000"
+      DOCUSHELF_SMTP_HOST: 0.0.0.0
+      DOCUSHELF_SMTP_PORT: "2525"
+    volumes:
+      - ${DOCUSHELF_DATA_PATH:-./data}:/data
+      # Paperless-Export für „docushelf import-paperless /import“ (nur lesend):
+      # - /pfad/zum/paperless/export:/import:ro
+      # Archiv an anderer Stelle (dann DOCUSHELF_ARCHIVE_DIR=/archiv in der .env):
+      # - /mnt/nas/archiv:/archiv
+    ports:
+      # Weboberfläche für einen Reverse Proxy auf dem Host. Mit Traefik im
+      # selben Docker-Netz (Labels unten) ist das nicht nötig.
+      - "${DOCUSHELF_HTTP_BIND:-127.0.0.1}:${DOCUSHELF_HTTP_PORT:-8000}:8000"
+      # SMTP-Empfänger für Scan-to-Mail (nur aktiv mit DOCUSHELF_SMTP_ENABLED=true).
+      # Eigene Adresse, damit die App nur dann von der VPN-Adresse abhängt, wenn
+      # Scan-to-Mail genutzt wird: DOCUSHELF_SMTP_BIND erst dann auf sie setzen.
+      - "${DOCUSHELF_SMTP_BIND:-127.0.0.1}:2525:2525"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # Zeit für laufende Uploads und den sauberen Halt der Verarbeitung
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "docushelf", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Traefik (Beispiel): Anmeldung macht DocuShelf selbst (OIDC), der Proxy
+    # beschränkt den Zugriff nur auf das VPN. Namen anpassen und einkommentieren.
+    # labels:
+    #   - traefik.enable=true
+    #   - traefik.docker.network=proxy
+    #   - traefik.http.routers.docushelf.rule=Host(`docs.example.net`)
+    #   - traefik.http.routers.docushelf.entrypoints=websecure
+    #   - traefik.http.routers.docushelf.tls=true
+    #   - traefik.http.routers.docushelf.tls.certresolver=letsencrypt
+    #   - traefik.http.routers.docushelf.middlewares=vpn-only@file
+    #   - traefik.http.services.docushelf.loadbalancer.server.port=8000
+    # networks:
+    #   - default
+    #   - proxy
+
+  # -- Profil „smb“ ------------------------------------------------------------
+  samba:
+    image: ghcr.io/servercontainers/samba:latest
+    profiles: ["smb"]
+    restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    # Konten (Drucker, Dienstkonto, Haushalt) mit Passwörtern: samba.env,
+    # Vorlage samba.env.example
+    env_file:
+      - path: samba.env
+        required: false
+    environment:
+      # Das Dienstkonto „docushelf“ hat dieselbe UID wie die App: Dateien, die
+      # über die Freigabe „archiv“ entstehen, gehören damit DocuShelf.
+      UID_docushelf: ${DOCUSHELF_UID:-1000}
+      AVAHI_DISABLE: "1"
+      WSDD2_DISABLE: "1"
+      NETBIOS_DISABLE: "1"
+      SAMBA_CONF_LOG_LEVEL: "1"
+      # Mindestens SMB 2.1, kein SMB1; keine Drucker, kein NetBIOS
+      SAMBA_GLOBAL_CONFIG_server_SPACE_min_SPACE_protocol: SMB2_10
+      SAMBA_GLOBAL_CONFIG_smb_SPACE_ports: "445"
+      SAMBA_GLOBAL_CONFIG_disable_SPACE_netbios: "yes"
+      SAMBA_GLOBAL_CONFIG_load_SPACE_printers: "no"
+      SAMBA_GLOBAL_CONFIG_printing: bsd
+      SAMBA_GLOBAL_CONFIG_printcap_SPACE_name: /dev/null
+      SAMBA_GLOBAL_CONFIG_disable_SPACE_spoolss: "yes"
+      SAMBA_GLOBAL_CONFIG_map_SPACE_to_SPACE_guest: Never
+      SAMBA_GLOBAL_CONFIG_restrict_SPACE_anonymous: "2"
+      # Nur bekannte Quell-Adressen (Drucker, VPN-Geräte), zusätzlich je Freigabe
+      SAMBA_GLOBAL_CONFIG_hosts_SPACE_allow: "127.0.0.1 ${SAMBA_HOSTS_ALLOW:-}"
+      SAMBA_GLOBAL_CONFIG_hosts_SPACE_deny: "0.0.0.0/0"
+      # „scan“: Briefkasten für den Drucker. Der Ordner hat Modus 1733 (init-data.sh):
+      # Das Konto „scanner“ darf Dateien anlegen, den Ordner aber weder auflisten
+      # noch fremde Dateien lesen oder löschen. DocuShelf (Besitzer) holt die
+      # Dateien ab; „force group“ macht sie für DocuShelf lesbar.
+      SAMBA_VOLUME_CONFIG_scan: >-
+        [scan];
+        path = /shares/scan;
+        comment = DocuShelf Scan-Eingang;
+        valid users = scanner;
+        invalid users = root docushelf;
+        read only = no;
+        browseable = no;
+        guest ok = no;
+        hosts allow = 127.0.0.1 ${SAMBA_HOSTS_ALLOW:-};
+        hosts deny = 0.0.0.0/0;
+        force group = docushelf;
+        create mask = 0640;
+        force create mode = 0640;
+        directory mask = 2770;
+        force directory mode = 2770;
+        hide unreadable = yes;
+        follow symlinks = no;
+        wide links = no
+      # „archiv“: der Archivordner zum Bearbeiten im Finder/Explorer. Alle
+      # Dateien gehören dem Dienstkonto (= DocuShelf); keine ._*-, .DS_Store-
+      # oder Thumbs.db-Dateien im Archiv.
+      SAMBA_VOLUME_CONFIG_archiv: >-
+        [archiv];
+        path = /shares/archiv;
+        comment = DocuShelf Archiv;
+        valid users = ${SAMBA_ARCHIVE_USERS:-nobody};
+        invalid users = root scanner docushelf;
+        read only = no;
+        browseable = yes;
+        guest ok = no;
+        hosts allow = 127.0.0.1 ${SAMBA_HOSTS_ALLOW:-};
+        hosts deny = 0.0.0.0/0;
+        force user = docushelf;
+        force group = docushelf;
+        create mask = 0644;
+        directory mask = 0755;
+        nt acl support = no;
+        vfs objects = fruit streams_xattr;
+        fruit:metadata = stream;
+        fruit:veto_appledouble = yes;
+        fruit:posix_rename = yes;
+        fruit:wipe_intentionally_left_blank_rfork = yes;
+        fruit:delete_empty_adfiles = yes;
+        veto files = /._*/.DS_Store/Thumbs.db/desktop.ini/.Trashes/.TemporaryItems/.Spotlight-V100/.fseventsd/;
+        delete veto files = yes;
+        hide dot files = yes;
+        follow symlinks = no;
+        wide links = no
+    volumes:
+      - ${DOCUSHELF_DATA_PATH:-./data}/eingang/quellen/smb:/shares/scan
+      - ${DOCUSHELF_DATA_PATH:-./data}/archiv:/shares/archiv
+    ports:
+      - "${DOCUSHELF_PRIVATE_IP:-127.0.0.1}:445:445"
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ltn 2>/dev/null | grep -q ':445 ' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # -- Profil „ftp“ ------------------------------------------------------------
+  ftp:
+    image: ${DOCUSHELF_FTP_IMAGE:-docushelf-ftp:local}
+    build:
+      context: ./ftp
+    profiles: ["ftp"]
+    restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      FTP_USER: ${FTP_USER:-scanner}
+      FTP_PASSWORD: ${FTP_PASSWORD:-}
+      # Hochgeladene Dateien gehören DocuShelf
+      FTP_UID: ${DOCUSHELF_UID:-1000}
+      FTP_GID: ${DOCUSHELF_GID:-1000}
+      # Passiver Modus: der Drucker verbindet sich zu dieser Adresse
+      FTP_PASV_ADDRESS: ${DOCUSHELF_PRIVATE_IP:-}
+      FTP_PASV_MIN_PORT: ${FTP_PASV_MIN_PORT:-30000}
+      FTP_PASV_MAX_PORT: ${FTP_PASV_MAX_PORT:-30009}
+      # Verzeichnislisten leer lassen: das Konto sieht nicht, was im Eingang wartet
+      FTP_HIDE_FILES: ${FTP_HIDE_FILES:-yes}
+      FTP_TLS_REQUIRED: ${FTP_TLS_REQUIRED:-no}
+    volumes:
+      - ${DOCUSHELF_DATA_PATH:-./data}/eingang/quellen/ftp:/srv/ftp
+      # Optional FTPS: tls.crt und tls.key in ./certs ablegen
+      # - ./certs:/certs:ro
+    ports:
+      - "${DOCUSHELF_PRIVATE_IP:-127.0.0.1}:21:21"
+      - "${DOCUSHELF_PRIVATE_IP:-127.0.0.1}:${FTP_PASV_MIN_PORT:-30000}-${FTP_PASV_MAX_PORT:-30009}:${FTP_PASV_MIN_PORT:-30000}-${FTP_PASV_MAX_PORT:-30009}"
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ltn 2>/dev/null | grep -q ':21 ' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Für Traefik im selben Docker-Host (Netzname anpassen):
+# networks:
+#   proxy:
+#     external: true
