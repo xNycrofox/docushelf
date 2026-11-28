@@ -1,13 +1,12 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
-{% import "_illustrations.html" as ill %}
 {% block title %}Anmelden{% endblock %}
 {% block body_class %}page-login{% endblock %}
 {% block public %}
 <div class="login">
   <div class="card login-card">
     <div class="login-head">
-      {{ ill.shelf() }}
+      {{ icon('logo', 'brand-mark login-mark') }}
       <h1 class="login-title">DocuShelf</h1>
       <p class="login-sub">Dein Dokumentenarchiv.</p>
     </div>

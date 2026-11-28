@@ -23,7 +23,7 @@ from docushelf.web.app import SESSION_COOKIE
 from web_support import FakeProvider, client_for, login_local, make_app
 
 STATIC = Path(routes_share.__file__).resolve().parent.parent / "static"
-LOGO_BLUE = (0x35, 0x55, 0xA5)
+LOGO_BLUE = (0x50, 0x48, 0xE5)
 # The smallest HEIC an iPhone could send: an ISO media "ftyp" box with the heic brand.
 HEIC_BYTES = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic" + b"\x00" * 64
 

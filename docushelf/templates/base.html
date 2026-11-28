@@ -4,8 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f6f2ea" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1c1b18" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light) and (max-width: 760px)">
+  <meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark) and (max-width: 760px)">
+  <meta name="theme-color" content="#f4f4f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
   <meta name="csrf-token" content="{{ csrf_token }}">
   {% if household %}<meta name="household" content="{{ household.id }}">{% endif %}
   <meta name="referrer" content="same-origin">

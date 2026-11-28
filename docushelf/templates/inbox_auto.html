@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
+{% block body_class %}layout-wide{% endblock %}
 {% block title %}Automatisch abgelegt · Eingang{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -56,10 +57,10 @@
           <form method="post" action="/eingang/automatisch/{{ f.doc_id|urlpart }}/passt">
             {{ m.csrf() }}
             <input type="hidden" name="after" value="{{ current_url }}">
-            <button class="btn btn-small{% if f.pending %} btn-primary{% endif %}" type="submit" aria-label="„{{ f.current_title }}“ passt">{{ icon('check') }} Passt</button>
+            <button class="btn{% if f.pending %} btn-primary{% endif %}" type="submit" aria-label="„{{ f.current_title }}“ passt">{{ icon('check') }} Passt</button>
           </form>
           {% endif %}
-          <a class="btn btn-ghost btn-small" href="{{ f.url }}" aria-label="„{{ f.current_title }}“ ändern">{{ icon('edit') }} Ändern</a>
+          <a class="btn btn-ghost" href="{{ f.url }}" aria-label="„{{ f.current_title }}“ ändern">{{ icon('edit') }} Ändern</a>
         </div>
         {% endif %}
       </div>

@@ -1,29 +1,46 @@
-/* Page "Eingangskanäle" (templates/channels.html); builds on app.css. */
+/* Page "Eingangskanäle" (templates/channels.html); builds on app.css and settings.css. */
 
 .channel-source { margin-bottom: 14px; }
+.channel-stack > .card > .card-head .count { margin-left: auto; }
 
+/* One mailbox or watch folder: a quiet inset block inside the channel card. */
 .channel-item {
   display: grid; gap: 12px;
-  padding: 16px 18px;
+  padding: 14px 16px 12px;
   border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-2);
 }
-.channel-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.channel-item-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
-.channel-item-title h3 { font-size: 1rem; }
+.channel-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+.channel-item-title { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; min-width: 0; }
+.channel-item-title h3 { font-size: .9375rem; font-weight: 600; }
+.channel-item-title .mono { font-size: 12px; }
 .channel-item-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.channel-item-actions .status { font-size: 13px; }
+.channel-item > .kv-compact { gap: 4px; margin-top: 0; font-size: 13px; }
+.channel-item > .kv-compact dt { font-size: 12.5px; }
+.channel-item > .disclosure, .channel-item > form { justify-self: start; }
+.channel-item > .disclosure[open] { justify-self: stretch; }
+.channel-item > .disclosure + form { margin-top: -8px; }
 .channel-toggle { display: inline-flex; }
 /* A table cell must stay a table cell (display: flex would take it out of the row). */
 .channel-row-actions { white-space: nowrap; }
 .channel-row-actions > form { display: inline-flex; vertical-align: middle; margin-left: 6px; }
 
-.channel-add { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
+/* Tables of addresses and scanner folders sit in a hairline frame. */
+.channel-stack .card-body > .table { border: 1px solid var(--border); border-radius: var(--radius); border-collapse: separate; border-spacing: 0; overflow: hidden; box-shadow: none; }
+.channel-stack .card-body > .table td.mono { font-size: 12.5px; }
+
+.channel-add {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+  padding-top: 16px; border-top: 1px solid var(--border);
+}
 .channel-add .field { flex: 1 1 200px; }
 .channel-form { min-width: min(100%, 640px); }
 .channel-senders { min-height: 64px; }
 .channel-setup .kv dd { overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
+  .channel-item { padding: 12px; }
   .channel-add .field { flex-basis: 100%; }
   .channel-add .btn { width: 100%; }
 }

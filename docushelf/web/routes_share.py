@@ -75,9 +75,9 @@ SHARE_ACCEPT = (
 TRUSTED_FETCH_SITES = frozenset({"none", "same-origin"})
 
 MANIFEST_MEDIA_TYPE = "application/manifest+json"
-# The paper background of the light palette (static/app.css, --bg), as in base.html.
-BACKGROUND_COLOR = "#f6f2ea"
-THEME_COLOR = "#f6f2ea"
+# The canvas background of the light palette (static/app.css, --bg), as in base.html.
+BACKGROUND_COLOR = "#f4f4f5"
+THEME_COLOR = "#f4f4f5"
 ICONS = (
     ("icon-192.png", 192, "any"),
     ("icon-512.png", 512, "any"),
